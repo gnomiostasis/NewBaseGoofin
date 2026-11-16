@@ -3,7 +3,8 @@ import { SURVIVAL, TILE, ZONES } from '../config';
 import { UI } from '../art/palette';
 import { Ground, Prop } from '../world/generate';
 import { darknessAt, tintAt } from '../world/shade';
-import { HAND_RECIPES, ITEMS, type ItemId } from '../game/items';
+import { BENCH_RECIPES, HAND_RECIPES, ITEMS, type ItemId, type Recipe } from '../game/items';
+import { BUILDABLES, payCost } from '../game/build';
 import { GameState } from '../game/state';
 import type { WorldScene } from './WorldScene';
 
@@ -17,7 +18,7 @@ const ZONE_BLURBS: Record<number, string> = {
   3: 'Cold and dark. Something watches from between the pines.',
 };
 
-const HINT = '[WASD] walk    [Shift] run    [E] gather    [F] eat    [C] craft    [M] map';
+const HINT = '[WASD] walk    [Shift] run    [E] gather    [F] eat    [C] craft    [B] build    [M] map';
 
 /** Screen-space overlay: vitals, compass, pack, prompts, crafting, stash, minimap, banners. */
 export class HudScene extends Phaser.Scene {
@@ -42,6 +43,10 @@ export class HudScene extends Phaser.Scene {
   private toasts: Phaser.GameObjects.Text[] = [];
   private craftBox!: Phaser.GameObjects.Container;
   private craftKey = '';
+  private handOpen = false;
+  private buildBox!: Phaser.GameObjects.Container;
+  private buildMsg!: Phaser.GameObjects.Text;
+  private buildKey = '';
   private stashBox!: Phaser.GameObjects.Container;
   private stashKey = '';
   private lastZone = -1;
@@ -74,19 +79,31 @@ export class HudScene extends Phaser.Scene {
     this.prompt = this.text(0, 0, '', 16, UI.cream).setOrigin(0.5, 1).setStroke(UI.ink, 4).setVisible(false);
     this.craftBox = this.add.container(0, 0).setVisible(false);
     this.stashBox = this.add.container(0, 0);
+    this.buildBox = this.add.container(0, 0).setVisible(false);
+    this.buildMsg = this.text(0, 0, '', 15, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 4);
     this.hint = this.text(0, 0, HINT, 15, UI.cream).setOrigin(0.5, 1).setStroke(UI.ink, 4);
 
     const kb = this.input.keyboard!;
-    kb.on('keydown-M', () => this.mapBox.setVisible(!this.mapBox.visible));
-    kb.on('keydown-C', () => {
-      this.craftBox.setVisible(!this.craftBox.visible);
-      this.craftKey = '';
+    kb.on('keydown-M', (ev: KeyboardEvent) => !ev.repeat && this.mapBox.setVisible(!this.mapBox.visible));
+    kb.on('keydown-C', (ev: KeyboardEvent) => {
+      if (ev.repeat) return;
+      this.handOpen = !this.handOpen;
+      this.gs.bench = null;
+      if (this.handOpen) this.gs.buildMode = false;
     });
-    kb.on('keydown-ESC', () => this.craftBox.setVisible(false));
+    kb.on('keydown-B', () => (this.handOpen = false));
+    kb.on('keydown-ESC', () => {
+      this.handOpen = false;
+      this.gs.bench = null;
+      this.gs.buildMode = false;
+    });
     kb.on('keydown', (ev: KeyboardEvent) => {
-      if (!this.craftBox.visible) return;
       const n = Number(ev.key);
-      if (n >= 1 && n <= HAND_RECIPES.length) this.craft(n - 1);
+      if (!(n >= 1 && n <= 9)) return;
+      const recipes = this.openRecipes();
+      if (recipes) {
+        if (n <= recipes.length) this.craft(recipes[n - 1], this.gs.bench !== null);
+      } else if (this.gs.buildMode && n <= BUILDABLES.length) this.gs.buildSel = n - 1;
     });
 
     this.gs.on('toast', (t) => this.toast(t));
@@ -192,23 +209,79 @@ export class HudScene extends Phaser.Scene {
     });
   }
 
-  private craft(k: number) {
-    const r = HAND_RECIPES[k];
-    if (this.gs.pack.has(r.makes)) {
+  /** The recipe list on screen right now: workbench, hand crafting, or none. */
+  private openRecipes(): Recipe[] | null {
+    if (this.gs.bench) return BENCH_RECIPES;
+    if (this.handOpen) return HAND_RECIPES;
+    return null;
+  }
+
+  /** At the workbench, ingredients can also come from nearby storage. */
+  private craft(r: Recipe, atBench: boolean) {
+    const pack = this.gs.pack;
+    const storage = atBench ? this.gs.storage : null;
+    if (pack.has(r.makes)) {
       this.toast(`You already have a ${ITEMS[r.makes].name.toLowerCase()}.`);
       return;
     }
-    if (!this.gs.pack.canCraft(r)) {
-      this.toast('Missing materials. They need to be in your pack.');
-      this.gs.sfx.thud();
-      return;
-    }
-    if (!this.gs.pack.craft(r)) {
+    if (pack.room(r.makes) < 1) {
       this.toast('No room in your pack.');
       return;
     }
+    if (!payCost(r.needs, pack, storage)) {
+      this.toast(atBench ? 'Missing materials (pack or nearby storage).' : 'Missing materials. They need to be in your pack.');
+      this.gs.sfx.thud();
+      return;
+    }
+    pack.add(r.makes);
     this.gs.sfx.craft();
-    this.toast(`Crafted a ${ITEMS[r.makes].name.toLowerCase()}!`);
+    const extra = ITEMS[r.makes].capacity ? ` Your pack holds ${pack.capacity} now.` : '';
+    this.toast(`Crafted a ${ITEMS[r.makes].name.toLowerCase()}!${extra}`);
+  }
+
+  /** Top-centre bar in build mode: the six buildables, their costs, and what's affordable. */
+  private redrawBuild() {
+    const gs = this.gs;
+    this.buildBox.setVisible(gs.buildMode);
+    this.buildMsg.setVisible(gs.buildMode);
+    if (!gs.buildMode) {
+      this.buildKey = '';
+      return;
+    }
+    const have = (id: ItemId) => gs.pack.count(id) + (gs.storage?.count(id) ?? 0);
+    const key = `${gs.buildSel}|${!!gs.storage}|${(['wood', 'stone', 'fiber'] as ItemId[]).map(have).join()}`;
+    this.buildMsg.setText(
+      gs.buildMsg ??
+        `[Left click] build   [Right click] remove   [1-6] choose   [B] done   ·   using ${gs.storage ? 'pack + storage' : 'pack only'}`,
+    );
+    this.buildMsg.setColor(gs.buildMsg ? '#f0b8a0' : UI.cream);
+    if (key === this.buildKey) return;
+    this.buildKey = key;
+    this.buildBox.removeAll(true);
+    const slot = 84;
+    const w = BUILDABLES.length * slot + 16;
+    const h = 92;
+    const g = this.add.graphics();
+    this.drawPanel(g, -w / 2, 0, w, h);
+    this.buildBox.add(g);
+    BUILDABLES.forEach((b, k) => {
+      const x = -w / 2 + 8 + k * slot;
+      const sel = k === gs.buildSel;
+      const afford = (Object.entries(b.cost) as Array<[ItemId, number]>).every(([id, n]) => have(id) >= n);
+      const cell = this.add.graphics();
+      cell.fillStyle(hex(sel ? '#f2b93b' : '#b08a54')).fillRect(x + 2, 8, slot - 4, h - 16);
+      cell.fillStyle(hex('#e7cf9c')).fillRect(x + 4, 10, slot - 8, h - 20);
+      this.buildBox.add(cell);
+      const frame = b.kind === 'wall' ? 'wall_0' : b.kind;
+      this.buildBox.add(this.text(x + 8, 12, String(k + 1), 11, UI.wood));
+      this.buildBox.add(this.text(x + slot / 2 + 4, 13, b.name, 12, afford ? UI.ink : '#9c8566').setOrigin(0.5, 0));
+      this.buildBox.add(this.add.image(x + 24, 78, 'atlas', frame).setOrigin(0.5, 1).setScale(1.5).setAlpha(afford ? 1 : 0.5));
+      (Object.entries(b.cost) as Array<[ItemId, number]>).forEach(([id, n], j) => {
+        const yy = 38 + j * 18;
+        this.buildBox.add(this.add.image(x + 52, yy + 7, 'atlas', `item_${id}`));
+        this.buildBox.add(this.text(x + 62, yy, `${n}`, 13, have(id) >= n ? '#3f7a3a' : '#a2412f'));
+      });
+    });
   }
 
   private buildMinimap() {
@@ -280,34 +353,46 @@ export class HudScene extends Phaser.Scene {
     this.packBox.add(label);
   }
 
-  /** Crafting card, toggled with C. Ingredients must be in your pack. */
+  /** Crafting card: hand recipes (C) or workbench recipes. */
   private redrawCraft() {
+    const recipes = this.openRecipes();
+    this.craftBox.setVisible(recipes !== null);
+    if (!recipes) {
+      this.craftKey = '';
+      return;
+    }
+    const atBench = this.gs.bench !== null;
     const pack = this.gs.pack;
-    const key = HAND_RECIPES.map((r) => Object.keys(r.needs).map((id) => pack.count(id as ItemId)).join() + pack.has(r.makes)).join('|');
+    const storage = atBench ? this.gs.storage : null;
+    const have = (id: ItemId) => pack.count(id) + (storage?.count(id) ?? 0);
+    const can = (r: Recipe) => (Object.entries(r.needs) as Array<[ItemId, number]>).every(([id, n]) => have(id) >= n);
+    const key = atBench + recipes.map((r) => Object.keys(r.needs).map((id) => have(id as ItemId)).join() + pack.has(r.makes)).join('|');
     if (key === this.craftKey) return;
     this.craftKey = key;
     this.craftBox.removeAll(true);
-    const w = 340;
-    const h = 56 + HAND_RECIPES.length * 52;
+    const w = 360;
+    const h = 56 + recipes.length * 52;
     const g = this.add.graphics();
     this.drawPanel(g, -w / 2, 0, w, h);
     this.craftBox.add(g);
-    this.craftBox.add(this.text(-w / 2 + 20, 14, 'Craft by hand', 18, UI.ink));
-    this.craftBox.add(this.text(w / 2 - 20, 18, 'C to close', 12, UI.wood).setOrigin(1, 0));
-    HAND_RECIPES.forEach((r, k) => {
+    this.craftBox.add(this.text(-w / 2 + 20, 14, atBench ? 'Workbench' : 'Craft by hand', 18, UI.ink));
+    this.craftBox.add(
+      this.text(w / 2 - 20, 18, atBench ? (storage ? 'uses pack + storage · Esc' : 'uses pack · Esc') : 'C to close', 12, UI.wood).setOrigin(1, 0),
+    );
+    recipes.forEach((r, k) => {
       const y = 46 + k * 52;
-      const ok = pack.canCraft(r);
+      const ok = can(r);
       const owned = pack.has(r.makes);
       this.craftBox.add(this.text(-w / 2 + 20, y + 8, `${k + 1}`, 18, ok && !owned ? UI.ink : '#9c8566'));
       this.craftBox.add(this.add.image(-w / 2 + 52, y + 18, 'atlas', `item_${r.makes}`).setScale(2));
       this.craftBox.add(
         this.text(-w / 2 + 74, y + 2, ITEMS[r.makes].name + (owned ? '  (have one)' : ''), 15, ok && !owned ? UI.ink : '#9c8566'),
       );
-      Object.entries(r.needs).forEach(([id, n], j) => {
-        const have = pack.count(id as ItemId);
-        const x = -w / 2 + 82 + j * 74;
+      (Object.entries(r.needs) as Array<[ItemId, number]>).forEach(([id, n], j) => {
+        const got = have(id);
+        const x = -w / 2 + 82 + j * 80;
         this.craftBox.add(this.add.image(x, y + 32, 'atlas', `item_${id}`));
-        this.craftBox.add(this.text(x + 10, y + 24, `${Math.min(have, n!)}/${n}`, 13, have >= n! ? '#3f7a3a' : '#a2412f'));
+        this.craftBox.add(this.text(x + 10, y + 24, `${Math.min(got, n)}/${n}`, 13, got >= n ? '#3f7a3a' : '#a2412f'));
       });
     });
   }
@@ -315,7 +400,7 @@ export class HudScene extends Phaser.Scene {
   /** While you're at camp, show what's in the stash. */
   private redrawStash() {
     const stash = this.gs.stash;
-    const show = this.gs.atCamp && stash.entries().length > 0;
+    const show = this.gs.nearStorage && stash.entries().length > 0;
     const key = show ? stash.entries().map(([id, n]) => `${id}${n}`).join() : '';
     this.stashBox.setVisible(show);
     if (key === this.stashKey) return;
@@ -328,7 +413,7 @@ export class HudScene extends Phaser.Scene {
     const g = this.add.graphics();
     this.drawPanel(g, 0, 0, w, h);
     this.stashBox.add(g);
-    this.stashBox.add(this.text(14, 12, 'Camp stash', 14, UI.ink));
+    this.stashBox.add(this.text(14, 12, 'Storage (camp and chests)', 14, UI.ink));
     entries.forEach(([id, n], k) => {
       const x = 22 + (k % 3) * 76;
       const y = 44 + Math.floor(k / 3) * 26;
@@ -347,6 +432,8 @@ export class HudScene extends Phaser.Scene {
     this.prompt.setPosition(width / 2, height - 116);
     this.craftBox.setPosition(width / 2, Math.round(height * 0.28));
     this.stashBox.setPosition(12, 132);
+    this.buildBox.setPosition(width / 2, 12);
+    this.buildMsg.setPosition(width / 2, 108);
     const size = this.worldScene.world.width * this.mapScale;
     this.mapBox.setPosition(width - size - 22, 22);
     // Hide the map on small screens by default; M still shows it.
@@ -399,7 +486,8 @@ export class HudScene extends Phaser.Scene {
 
     this.drawBars();
     this.redrawPack();
-    if (this.craftBox.visible) this.redrawCraft();
+    this.redrawCraft();
+    this.redrawBuild();
     this.redrawStash();
 
     // Hunger warnings: a toast once, then a slow red pulse while starving.

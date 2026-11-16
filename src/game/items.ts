@@ -11,7 +11,10 @@ export type ItemId =
   | 'mushroom'
   | 'glowcap'
   | 'stone_axe'
-  | 'stone_pick';
+  | 'stone_pick'
+  | 'copper_axe'
+  | 'copper_pick'
+  | 'woven_basket';
 
 export interface ItemDef {
   id: ItemId;
@@ -23,6 +26,10 @@ export interface ItemDef {
   /** Health restored when eaten. */
   heal?: number;
   tool?: 'axe' | 'pick';
+  /** Tool strength: hits needed are divided by this. */
+  power?: number;
+  /** Extra pack capacity while carried. */
+  capacity?: number;
   /** Materials can be dropped into the camp stash; tools and food stay with you. */
   kind: 'material' | 'food' | 'tool';
 }
@@ -36,8 +43,11 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   glowcap: { id: 'glowcap', name: 'Glowcap', weight: 0.5, kind: 'material' },
   berries: { id: 'berries', name: 'Berries', weight: 0.5, food: 12, kind: 'food' },
   mushroom: { id: 'mushroom', name: 'Mushroom', weight: 0.5, food: 18, heal: 4, kind: 'food' },
-  stone_axe: { id: 'stone_axe', name: 'Stone axe', weight: 3, tool: 'axe', kind: 'tool' },
-  stone_pick: { id: 'stone_pick', name: 'Stone pick', weight: 3, tool: 'pick', kind: 'tool' },
+  stone_axe: { id: 'stone_axe', name: 'Stone axe', weight: 3, tool: 'axe', power: 1, kind: 'tool' },
+  stone_pick: { id: 'stone_pick', name: 'Stone pick', weight: 3, tool: 'pick', power: 1, kind: 'tool' },
+  copper_axe: { id: 'copper_axe', name: 'Copper axe', weight: 3, tool: 'axe', power: 2, kind: 'tool' },
+  copper_pick: { id: 'copper_pick', name: 'Copper pick', weight: 3, tool: 'pick', power: 2, kind: 'tool' },
+  woven_basket: { id: 'woven_basket', name: 'Woven basket', weight: 0, capacity: 20, kind: 'tool' },
 };
 
 export interface Recipe {
@@ -51,10 +61,20 @@ export const HAND_RECIPES: Recipe[] = [
   { makes: 'stone_pick', needs: { stick: 3, stone: 3, fiber: 2 } },
 ];
 
+/** Made at a workbench. Ingredients can come from your pack or nearby storage. */
+export const BENCH_RECIPES: Recipe[] = [
+  { makes: 'copper_axe', needs: { copper_ore: 4, wood: 2, stick: 2 } },
+  { makes: 'copper_pick', needs: { copper_ore: 5, wood: 2, stick: 2 } },
+  { makes: 'woven_basket', needs: { fiber: 12, stick: 4 } },
+];
+
 /** Order items appear in the pack display. */
 export const ITEM_ORDER: ItemId[] = [
+  'copper_axe',
+  'copper_pick',
   'stone_axe',
   'stone_pick',
+  'woven_basket',
   'berries',
   'mushroom',
   'stick',

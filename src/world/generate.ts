@@ -56,7 +56,14 @@ export interface World {
   campObjects: CampObject[];
   /** Tiles along each trail, in order from camp outward. */
   trails: Array<Array<[number, number]>>;
+  /** Player-built structure on each tile (see game/build.ts); 0 = none. */
+  build: Uint8Array;
+  /** 1 where the player laid a floor. */
+  floor: Uint8Array;
 }
+
+/** Structure ids that block movement. Kept here so collision has one source of truth. */
+export const BLOCKING_BUILDS = new Set<number>([1, 3, 4, 5]);
 
 export const isBlockingProp = (p: Prop) => BLOCKING.has(p);
 
@@ -71,7 +78,7 @@ export function inBounds(w: World, x: number, y: number) {
 export function isBlocked(w: World, x: number, y: number) {
   if (!inBounds(w, x, y)) return true;
   const i = idx(w, x, y);
-  return w.ground[i] === Ground.Water || BLOCKING.has(w.prop[i] as Prop);
+  return w.ground[i] === Ground.Water || BLOCKING.has(w.prop[i] as Prop) || BLOCKING_BUILDS.has(w.build[i]);
 }
 
 export function zoneAt(distance: number): ZoneId {
@@ -94,6 +101,8 @@ export function generateWorld(seed = WORLD.seed, width = WORLD.width, height = W
     depth: new Float32Array(n),
     campObjects: [],
     trails: [],
+    build: new Uint8Array(n),
+    floor: new Uint8Array(n),
   };
   const rand = mulberry32(seed);
   const { campX, campY } = world;
