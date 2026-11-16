@@ -1,4 +1,5 @@
 import { SURVIVAL } from '../config';
+import { BASE_MODS, type StatMods } from './stats';
 
 /** The three survival bars, each 0..max. */
 export interface Vitals {
@@ -27,16 +28,16 @@ export interface TickInput {
  * Stamina recovers when you're not sprinting, slowly if you're hungry.
  * At zero hunger you start losing health.
  */
-export function tickVitals(v: Vitals, t: TickInput): Vitals {
+export function tickVitals(v: Vitals, t: TickInput, m: StatMods = BASE_MODS): Vitals {
   const s = SURVIVAL;
-  let hunger = v.hunger - t.dt * s.hungerPerSecond * (t.sprinting ? s.sprintHungerFactor : 1);
+  let hunger = v.hunger - t.dt * s.hungerPerSecond * m.hungerMul * (t.sprinting ? s.sprintHungerFactor : 1);
   let stamina = v.stamina;
   let health = v.health;
 
-  if (t.sprinting && t.moving) stamina -= t.dt * s.sprintStaminaPerSecond;
+  if (t.sprinting && t.moving) stamina -= t.dt * s.sprintStaminaPerSecond * m.sprintCostMul;
   else {
     const hungry = hunger < s.hungryBelow;
-    const rate = (t.atCamp ? s.campStaminaRegen : s.staminaRegen) * (hungry ? 0.35 : 1) * (t.moving ? 0.5 : 1);
+    const rate = (t.atCamp ? s.campStaminaRegen : s.staminaRegen) * m.staminaRegenMul * (hungry ? 0.35 : 1) * (t.moving ? 0.5 : 1);
     stamina += t.dt * rate;
   }
 
@@ -48,7 +49,7 @@ export function tickVitals(v: Vitals, t: TickInput): Vitals {
   }
 
   return {
-    health: clamp(health, 0, s.maxHealth),
+    health: clamp(health, 0, m.maxHealth),
     hunger: clamp(hunger, 0, s.maxHunger),
     stamina: clamp(stamina, 0, s.maxStamina),
   };
@@ -61,9 +62,9 @@ export function spendStamina(v: Vitals, cost: number): boolean {
   return true;
 }
 
-export function eat(v: Vitals, food: number, heal = 0) {
+export function eat(v: Vitals, food: number, heal = 0, maxHealth = SURVIVAL.maxHealth) {
   v.hunger = clamp(v.hunger + food, 0, SURVIVAL.maxHunger);
-  v.health = clamp(v.health + heal, 0, SURVIVAL.maxHealth);
+  v.health = clamp(v.health + heal, 0, maxHealth);
 }
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
