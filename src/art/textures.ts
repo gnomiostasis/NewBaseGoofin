@@ -117,7 +117,9 @@ function buildTileset(scene: Phaser.Scene) {
   for (let v = 0; v < GRASS_VARIANTS; v++) grassTile(g, ...at(T_GRASS + v), v);
   for (let m = 0; m < 16; m++) dirtTile(g, ...at(T_DIRT + m), m);
   for (let m = 0; m < 16; m++) waterTile(g, ...at(T_WATER + m), m);
-  scene.textures.addCanvas('tiles', canvas);
+  const tex = scene.textures.addCanvas('tiles', canvas)!;
+  // Named frames for drawing single tiles outside a tilemap (the title screen).
+  for (let v = 0; v < GRASS_VARIANTS; v++) tex.add(`grass_${v}`, 0, ...at(T_GRASS + v), TILE, TILE);
 }
 
 // ---------------------------------------------------------------------------

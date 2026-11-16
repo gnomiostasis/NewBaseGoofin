@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Build } from '../src/game/build';
 import { MILL, millStatus, msPerWood, tickMill, treesNear, type MillState } from '../src/game/mill';
 import { Prop, generateWorld, idx, isBlocked, type World } from '../src/world/generate';
+import { GATHER } from '../src/game/gather';
 
 /** A blank 20x20 corner of a real world, cleared of props and builds. */
 function clearing(): [World, number, number] {
@@ -64,5 +65,12 @@ describe('lumber mill', () => {
     expect(millStatus(w, x, y, MILL.woodCap)).toMatchObject({ ok: false, reason: 'full' });
     w.prop[idx(w, x, y - 2)] = Prop.Stump;
     expect(tickMill(m, millStatus(w, x, y, 0), MILL.msPerWoodOneTree, 0)).toBe(0);
+  });
+});
+
+describe('regrowth', () => {
+  it('chopped trees grow back from their stumps, so a mill never runs dry for good', () => {
+    expect(GATHER[Prop.Tree]?.leaves).toBe(Prop.Stump);
+    expect(GATHER[Prop.Tree]?.regrow).toBeGreaterThan(0);
   });
 });

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { buildTextures } from '../art/textures';
 
-/** Paints all textures, waits briefly for the UI font, then starts the world. */
+/** Paints all textures, waits briefly for the UI font, then shows the title screen. */
 export class BootScene extends Phaser.Scene {
   constructor() {
     super('boot');
@@ -17,7 +17,6 @@ export class BootScene extends Phaser.Scene {
     } catch {
       // Fall back to the monospace font if the web font can't load.
     }
-    this.scene.start('world');
-    this.scene.launch('hud');
+    this.scene.start('title');
   }
 }
