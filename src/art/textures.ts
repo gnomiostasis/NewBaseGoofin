@@ -446,6 +446,146 @@ function targetCorners(g: Ctx) {
   rect(g, 17, 18 - L, 1, L, c);
 }
 
+// --- player-built structures ---------------------------------------------
+
+const PLANK = ['#b98a5a', '#9c6b43', '#d2a473', '#5a3a24'] as const;
+const COPPER = ['#d9824a', '#b0612f', '#f2a66e', '#6e3418'] as const;
+
+function floorTile(g: Ctx) {
+  rect(g, 0, 0, 16, 16, PLANK[0]);
+  for (let r = 0; r < 4; r++) {
+    const y = r * 4;
+    rect(g, 0, y + 3, 16, 1, PLANK[1]);
+    rect(g, 0, y, 16, 1, PLANK[2]);
+    const seam = (r * 7 + 3) % 16;
+    rect(g, seam, y, 1, 3, PLANK[1]);
+    px(g, (seam + 9) % 16, y + 1, PLANK[3]);
+  }
+}
+
+/**
+ * 16 x 26 log-wall piece: a 16px top face that joins with neighbouring walls (mask bits
+ * N=1, E=2, S=4, W=8) and a 10px front face when nothing continues the wall below.
+ */
+function wallPiece(g: Ctx, mask: number) {
+  const top = 0;
+  const face = 16;
+  rect(g, 0, top, 16, 16, WOOD[0]);
+  for (let x = 2; x < 16; x += 5) rect(g, x, top, 1, 16, WOOD[1]);
+  rect(g, 0, top, 16, 1, WOOD[2]);
+  // Outline where the wall ends.
+  if (!(mask & 1)) rect(g, 0, top, 16, 1, OUTLINE);
+  if (!(mask & 2)) rect(g, 15, top, 1, 16, OUTLINE);
+  if (!(mask & 8)) rect(g, 0, top, 1, 16, OUTLINE);
+  if (!(mask & 4)) {
+    rect(g, 0, face, 16, 10, WOOD[1]);
+    for (let y = face + 2; y < face + 10; y += 3) rect(g, 0, y, 16, 1, WOOD[3]);
+    rect(g, 0, face, 16, 1, OUTLINE);
+    rect(g, 0, face + 9, 16, 1, OUTLINE);
+    if (!(mask & 2)) rect(g, 15, face, 1, 10, OUTLINE);
+    if (!(mask & 8)) rect(g, 0, face, 1, 10, OUTLINE);
+    for (let x = 3; x < 16; x += 6) px(g, x, face + 4, WOOD[2]);
+  } else {
+    rect(g, 0, face, 16, 10, WOOD[0]);
+    for (let x = 2; x < 16; x += 5) rect(g, x, face, 1, 10, WOOD[1]);
+    if (!(mask & 2)) rect(g, 15, face, 1, 10, OUTLINE);
+    if (!(mask & 8)) rect(g, 0, face, 1, 10, OUTLINE);
+  }
+}
+
+function door(g: Ctx, open: boolean) {
+  // 16 x 26: frame posts and lintel, plank door (or a dark opening when open).
+  rect(g, 0, 0, 16, 26, OUTLINE);
+  rect(g, 1, 1, 14, 24, WOOD[1]);
+  rect(g, 1, 1, 14, 3, WOOD[0]);
+  if (open) {
+    rect(g, 3, 5, 10, 21, '#3b2a1e');
+    rect(g, 3, 5, 2, 21, PLANK[1]);
+  } else {
+    rect(g, 3, 5, 10, 21, PLANK[0]);
+    for (let x = 5; x < 13; x += 3) rect(g, x, 5, 1, 21, PLANK[1]);
+    rect(g, 3, 9, 10, 1, PLANK[3]);
+    rect(g, 3, 19, 10, 1, PLANK[3]);
+    px(g, 11, 15, '#e0b13a');
+  }
+}
+
+function chest(g: Ctx) {
+  shadow(g, 8, 14, 7, 1.2, 0.25);
+  rect(g, 1, 3, 14, 11, OUTLINE);
+  rect(g, 2, 4, 12, 4, PLANK[2]);
+  rect(g, 2, 8, 12, 5, PLANK[0]);
+  rect(g, 2, 7, 12, 1, PLANK[3]);
+  rect(g, 4, 4, 1, 9, WOOD[1]);
+  rect(g, 11, 4, 1, 9, WOOD[1]);
+  rect(g, 7, 6, 2, 3, '#e0b13a');
+  px(g, 7, 6, '#fff0a0');
+}
+
+function bed(g: Ctx) {
+  // 16 x 24, head at the top.
+  shadow(g, 8, 22, 8, 1.5, 0.25);
+  rect(g, 1, 1, 14, 22, OUTLINE);
+  rect(g, 2, 2, 12, 20, WOOD[0]);
+  rect(g, 3, 3, 10, 5, '#efe4cf');
+  rect(g, 3, 3, 10, 1, '#ffffff');
+  rect(g, 3, 9, 10, 12, '#c8553d');
+  rect(g, 3, 9, 10, 2, '#e07a5a');
+  for (let y = 13; y < 21; y += 4) rect(g, 3, y, 10, 1, '#a8442f');
+}
+
+function workbench(g: Ctx) {
+  // 16 x 20 table with tools on top.
+  shadow(g, 8, 18, 8, 1.5, 0.25);
+  rect(g, 1, 4, 14, 8, OUTLINE);
+  rect(g, 2, 5, 12, 6, PLANK[2]);
+  rect(g, 2, 9, 12, 2, PLANK[1]);
+  rect(g, 2, 12, 2, 6, OUTLINE);
+  rect(g, 12, 12, 2, 6, OUTLINE);
+  rect(g, 2, 12, 1, 6, WOOD[1]);
+  rect(g, 12, 12, 1, 6, WOOD[1]);
+  rect(g, 4, 14, 8, 1, WOOD[1]);
+  // A saw and a hammer.
+  rect(g, 4, 6, 5, 1, STONE[2]);
+  rect(g, 4, 7, 5, 1, STONE[1]);
+  rect(g, 9, 6, 2, 2, WOOD[1]);
+  rect(g, 11, 5, 1, 4, WOOD[3]);
+  rect(g, 10, 5, 3, 1, STONE[1]);
+}
+
+function iconCopperAxe(g: Ctx) {
+  for (let i = 0; i < 10; i++) {
+    px(g, 3 + i, 13 - i, OUTLINE);
+    px(g, 4 + i, 13 - i, WOOD[0]);
+  }
+  rect(g, 8, 1, 6, 6, OUTLINE);
+  rect(g, 9, 2, 4, 4, COPPER[0]);
+  rect(g, 9, 2, 4, 1, COPPER[2]);
+  rect(g, 12, 3, 1, 3, COPPER[1]);
+}
+
+function iconCopperPick(g: Ctx) {
+  for (let i = 0; i < 10; i++) {
+    px(g, 7, 4 + i, OUTLINE);
+    px(g, 8, 4 + i, WOOD[0]);
+  }
+  rect(g, 2, 2, 12, 3, OUTLINE);
+  rect(g, 3, 3, 10, 1, COPPER[0]);
+  rect(g, 1, 4, 2, 2, COPPER[1]);
+  rect(g, 13, 4, 2, 2, COPPER[1]);
+  rect(g, 7, 2, 3, 3, COPPER[3]);
+}
+
+function iconBasket(g: Ctx) {
+  rect(g, 2, 6, 12, 8, OUTLINE);
+  rect(g, 3, 7, 10, 6, '#c9a25a');
+  for (let y = 7; y < 13; y += 2) rect(g, 3, y, 10, 1, '#a8873f');
+  for (let x = 4; x < 13; x += 3) rect(g, x, 7, 1, 6, '#e0c27a');
+  rect(g, 4, 2, 8, 1, OUTLINE);
+  rect(g, 3, 3, 1, 3, OUTLINE);
+  rect(g, 12, 3, 1, 3, OUTLINE);
+}
+
 // --- camp ---------------------------------------------------------------
 
 function tent(g: Ctx) {
@@ -663,7 +803,7 @@ export const TREE_FRAMES = {
 export function buildTextures(scene: Phaser.Scene) {
   buildTileset(scene);
 
-  const atlas = new Atlas(512);
+  const atlas = new Atlas(1024);
   atlas.add('tree_meadow_0', 32, 40, (g) => roundTree(g, LEAVES.meadow[0], 1, false));
   atlas.add('tree_meadow_1', 32, 40, (g) => roundTree(g, LEAVES.meadow[1], 2, true));
   atlas.add('tree_meadow_2', 32, 40, (g) => roundTree(g, LEAVES.meadow[0], 3, true));
@@ -705,6 +845,16 @@ export function buildTextures(scene: Phaser.Scene) {
   atlas.add('item_glowcap', 16, 16, (g) => iconMushroom(g, true));
   atlas.add('item_stick', 16, 16, (g) => sticksOnGround(g, 0));
   atlas.add('target', 18, 18, targetCorners);
+  atlas.add('floor', 16, 16, floorTile);
+  for (let m = 0; m < 16; m++) atlas.add(`wall_${m}`, 16, 26, (g) => wallPiece(g, m));
+  atlas.add('door', 16, 26, (g) => door(g, false));
+  atlas.add('door_open', 16, 26, (g) => door(g, true));
+  atlas.add('chest', 16, 16, chest);
+  atlas.add('bed', 16, 24, bed);
+  atlas.add('workbench', 16, 20, workbench);
+  atlas.add('item_copper_axe', 16, 16, iconCopperAxe);
+  atlas.add('item_copper_pick', 16, 16, iconCopperPick);
+  atlas.add('item_woven_basket', 16, 16, iconBasket);
   atlas.add('eyes', 4, 1, eyes);
   atlas.add('glow', 96, 96, (g) => glow(g, 96));
 

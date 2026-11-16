@@ -20,6 +20,18 @@ import { ITEMS, type ItemId } from '../game/items';
 import { GameState } from '../game/state';
 import { eat, freshVitals, spendStamina, tickVitals } from '../game/survival';
 import { Sfx } from '../game/sfx';
+import {
+  BUILDABLES,
+  BUILD_ID,
+  BUILD_REACH,
+  Build,
+  KIND_OF,
+  canPlace,
+  payCost,
+  refundFor,
+  wallMask,
+  type BuildKind,
+} from '../game/build';
 
 const CHUNK = 16; // tiles per side of a streaming chunk
 const SWING_COOLDOWN = 330; // ms between tool swings
@@ -47,7 +59,8 @@ interface Watcher {
 type Target =
   | { kind: 'prop'; i: number; tx: number; ty: number; rule: GatherRule; prop: Prop }
   | { kind: 'camp'; tx: number; ty: number; what: CampObjectKind }
-  | { kind: 'regrowing'; tx: number; ty: number };
+  | { kind: 'regrowing'; tx: number; ty: number }
+  | { kind: 'build'; tx: number; ty: number; what: BuildKind };
 
 export class WorldScene extends Phaser.Scene {
   world!: World;
@@ -110,6 +123,18 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-E', () => (this.queuedAct = true));
     this.input.keyboard!.on('keydown-SPACE', () => (this.queuedAct = true));
     this.input.keyboard!.on('keydown-F', () => (this.queuedEat = true));
+    this.input.keyboard!.on('keydown-B', (ev: KeyboardEvent) => {
+      if (ev.repeat) return;
+      this.game_.buildMode = !this.game_.buildMode;
+      this.game_.bench = null;
+    });
+    this.input.mouse?.disableContextMenu();
+    this.ghost = this.add.image(0, 0, 'atlas', 'floor').setOrigin(0.5, 1).setAlpha(0.65).setDepth(200002).setVisible(false);
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (!this.game_.buildMode || this.busy) return;
+      if (p.rightButtonDown()) this.removeAtPointer();
+      else this.placeAtPointer();
+    });
 
     this.scale.on('resize', this.fitZoom, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.fitZoom, this));
@@ -117,6 +142,10 @@ export class WorldScene extends Phaser.Scene {
 
   private queuedAct = false;
   private queuedEat = false;
+  private buildObjects = new Map<number, Phaser.GameObjects.Image[]>();
+  private ghost!: Phaser.GameObjects.Image;
+  private chests = new Set<number>();
+  private doors = new Set<number>();
 
   // ---------------------------------------------------------------- world
 
@@ -412,6 +441,8 @@ export class WorldScene extends Phaser.Scene {
     for (const [tx, ty] of candidates) {
       if (!inBounds(w, tx, ty)) continue;
       const i = idx(w, tx, ty);
+      const b = w.build[i];
+      if (b === Build.Chest || b === Build.Bed || b === Build.Workbench) return { kind: 'build', tx, ty, what: KIND_OF[b] };
       const camp = this.campAt.get(i);
       if (camp && (camp === 'crate' || camp === 'bedroll' || camp === 'tent' || camp === 'sack')) {
         return { kind: 'camp', tx, ty, what: camp };
@@ -427,12 +458,17 @@ export class WorldScene extends Phaser.Scene {
   private describe(t: Target): [string, boolean] {
     const pack = this.game_.pack;
     if (t.kind === 'regrowing') return ['Picked clean. Berries will grow back.', true];
+    if (t.kind === 'build') {
+      if (t.what === 'chest') return ['Store materials in chest', false];
+      if (t.what === 'bed') return ['Sleep (you will wake here)', false];
+      return ['Use workbench', false];
+    }
     if (t.kind === 'camp') {
       if (t.what === 'crate' || t.what === 'sack') return ['Store materials in camp stash', false];
       return ['Rest', false];
     }
     const name = propName(t.prop, t.rule);
-    if (t.rule.tool && !pack.hasTool(t.rule.tool)) return [`${t.rule.verb} ${name} (needs a stone ${t.rule.tool})`, true];
+    if (t.rule.tool && !pack.hasTool(t.rule.tool)) return [`${t.rule.verb} ${name} (needs an ${t.rule.tool === 'axe' ? 'axe' : 'pick'})`, true];
     return [`${t.rule.verb} ${name}`, false];
   }
 
@@ -441,6 +477,18 @@ export class WorldScene extends Phaser.Scene {
     if (!t || time < this.nextSwing) return;
     const st = this.game_;
     if (t.kind === 'regrowing') return;
+    if (t.kind === 'build') {
+      this.nextSwing = time + 400;
+      if (t.what === 'chest') this.storeMaterials();
+      else if (t.what === 'bed') {
+        st.respawn = [t.tx, t.ty];
+        this.rest(true);
+      } else {
+        st.bench = st.bench ? null : [t.tx, t.ty];
+        st.buildMode = false;
+      }
+      return;
+    }
     if (t.kind === 'camp') {
       if (t.what === 'crate' || t.what === 'sack') this.storeMaterials();
       else this.rest();
@@ -470,8 +518,9 @@ export class WorldScene extends Phaser.Scene {
     const cy = t.ty * TILE + 8;
     this.swingFeedback(cx, cy, t.prop, rule);
 
+    const needed = rule.tool ? Math.max(1, Math.ceil(rule.hits / st.pack.toolPower(rule.tool))) : rule.hits;
     const done = (this.hits.get(t.i) ?? 0) + 1;
-    if (done < rule.hits) {
+    if (done < needed) {
       this.hits.set(t.i, done);
       return;
     }
@@ -528,12 +577,16 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     const total = moved.reduce((a, [, n]) => a + n, 0);
-    st.emit('toast', `Stored ${total} item${total === 1 ? '' : 's'} at camp.`);
+    st.emit('toast', `Stored ${total} item${total === 1 ? '' : 's'}. Chests and the camp stash share storage.`);
     this.sfx.pickup();
   }
 
-  private rest() {
+  private rest(inBed = false) {
     const st = this.game_;
+    if (inBed && st.vitals.stamina >= SURVIVAL.maxStamina - 1) {
+      st.emit('toast', 'You will wake up here if you collapse.');
+      return;
+    }
     if (st.vitals.stamina >= SURVIVAL.maxStamina - 1) {
       st.emit('toast', "You're not tired.");
       return;
@@ -545,7 +598,7 @@ export class WorldScene extends Phaser.Scene {
     cam.once('camerafadeoutcomplete', () => {
       st.vitals.stamina = SURVIVAL.maxStamina;
       st.vitals.hunger = Math.max(0, st.vitals.hunger - 8);
-      st.emit('toast', 'You rest by the fire. Stamina restored.');
+      st.emit('toast', inBed ? 'You sleep in your own bed. Energy restored, and you will wake here.' : 'You rest by the fire. Energy restored.');
       cam.fadeIn(450, 16, 24, 35);
       this.busy = false;
     });
@@ -578,11 +631,177 @@ export class WorldScene extends Phaser.Scene {
     cam.once('camerafadeoutcomplete', () => {
       st.pack.clear((id) => ITEMS[id].kind === 'tool');
       st.vitals = { ...freshVitals(), health: 50, hunger: 50, stamina: 50 };
-      this.player.setPosition(this.world.campX * TILE + 8, (this.world.campY + 1) * TILE + 10);
+      const bed = st.respawn && this.world.build[idx(this.world, ...st.respawn)] === Build.Bed ? st.respawn : null;
+      if (bed) this.player.setPosition(bed[0] * TILE + 8, (bed[1] + 1) * TILE + 6);
+      else this.player.setPosition(this.world.campX * TILE + 8, (this.world.campY + 1) * TILE + 10);
       cam.fadeIn(900, 0, 0, 0);
-      st.emit('toast', 'You collapsed and woke up at camp. Everything in your pack is gone.');
+      st.emit('toast', `You collapsed and woke up ${bed ? 'in your bed' : 'at camp'}. Everything in your pack is gone.`);
       this.busy = false;
     });
+  }
+
+  // ------------------------------------------------------------- building
+
+  /** Draws whatever is built on one tile (floor plus structure). */
+  private renderBuild(x: number, y: number) {
+    const w = this.world;
+    const i = idx(w, x, y);
+    for (const o of this.buildObjects.get(i) ?? []) o.destroy();
+    const objs: Phaser.GameObjects.Image[] = [];
+    const tint = tintAt(w.depth[i]);
+    const footX = x * TILE + 8;
+    const footY = (y + 1) * TILE;
+    if (w.floor[i]) objs.push(this.add.image(footX, footY, 'atlas', 'floor').setOrigin(0.5, 1).setDepth(-5).setTint(tint));
+    const b = w.build[i];
+    if (b !== Build.None) {
+      const frame = b === Build.Wall ? `wall_${wallMask(w, x, y)}` : b === Build.Door ? 'door' : KIND_OF[b];
+      objs.push(this.add.image(footX, footY, 'atlas', frame).setOrigin(0.5, 1).setDepth(footY).setTint(tint));
+    }
+    if (objs.length) this.buildObjects.set(i, objs);
+    else this.buildObjects.delete(i);
+  }
+
+  private refreshAround(x: number, y: number) {
+    for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (inBounds(this.world, nx, ny) && this.world.build[idx(this.world, nx, ny)] === Build.Wall) this.renderBuild(nx, ny);
+    }
+  }
+
+  private pointerTile(): [number, number] {
+    const p = this.input.activePointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    return [Math.floor(p.x / TILE), Math.floor(p.y / TILE)];
+  }
+
+  private playerTiles(): Array<[number, number]> {
+    const b = this.player.body;
+    const tiles: Array<[number, number]> = [];
+    for (const x of [b.left, b.right - 0.01]) for (const y of [b.top, b.bottom - 0.01]) tiles.push([Math.floor(x / TILE), Math.floor(y / TILE)]);
+    return tiles;
+  }
+
+  private campTiles(): Set<number> {
+    return new Set(this.campAt.keys());
+  }
+
+  /** Checks the ghost tile: reach, ground and cost. */
+  private checkPlacement(x: number, y: number): string | null {
+    const st = this.game_;
+    const def = BUILDABLES[st.buildSel];
+    const ptx = Math.floor(this.player.x / TILE);
+    const pty = Math.floor(this.player.body.center.y / TILE);
+    if (Math.max(Math.abs(x - ptx), Math.abs(y - pty)) > BUILD_REACH) return 'Too far away';
+    const check = canPlace(this.world, x, y, def.kind, this.playerTiles(), this.campTiles());
+    if (!check.ok) return check.reason;
+    for (const [id, n] of Object.entries(def.cost) as Array<[ItemId, number]>) {
+      if (st.pack.count(id) + (st.storage?.count(id) ?? 0) < n) return `Need ${n} ${ITEMS[id].name.toLowerCase()}`;
+    }
+    return null;
+  }
+
+  private placeAtPointer() {
+    const st = this.game_;
+    const [x, y] = this.pointerTile();
+    const why = this.checkPlacement(x, y);
+    if (why) {
+      st.emit('toast', why);
+      this.sfx.thud();
+      return;
+    }
+    const def = BUILDABLES[st.buildSel];
+    if (!payCost(def.cost, st.pack, st.storage)) return;
+    const w = this.world;
+    const i = idx(w, x, y);
+    w.prop[i] = Prop.None;
+    for (const o of this.propObjects.get(i) ?? []) o.destroy();
+    this.propObjects.delete(i);
+    if (def.kind === 'floor') w.floor[i] = 1;
+    else w.build[i] = BUILD_ID[def.kind];
+    if (def.kind === 'chest') this.chests.add(i);
+    if (def.kind === 'door') this.doors.add(i);
+    if (isBlocked(w, x, y)) this.collideLayer.putTileAt(T_BLOCK, x, y);
+    this.renderBuild(x, y);
+    this.refreshAround(x, y);
+    this.sfx.chop();
+    for (const o of this.buildObjects.get(i) ?? []) {
+      o.setScale(1.15);
+      this.tweens.add({ targets: o, scale: 1, duration: 140, ease: 'Back.easeOut' });
+    }
+  }
+
+  private removeAtPointer() {
+    const st = this.game_;
+    const w = this.world;
+    const [x, y] = this.pointerTile();
+    if (!inBounds(w, x, y)) return;
+    const i = idx(w, x, y);
+    let kind: BuildKind | null = null;
+    if (w.build[i] !== Build.None) {
+      kind = KIND_OF[w.build[i]];
+      w.build[i] = Build.None;
+      this.chests.delete(i);
+      this.doors.delete(i);
+    } else if (w.floor[i]) {
+      kind = 'floor';
+      w.floor[i] = 0;
+    }
+    if (!kind) return;
+    if (!isBlocked(w, x, y)) this.collideLayer.removeTileAt(x, y);
+    this.renderBuild(x, y);
+    this.refreshAround(x, y);
+    const refund = refundFor(kind);
+    const got: Array<[ItemId, number]> = [];
+    for (const [id, n] of refund) {
+      const k = st.pack.add(id, n);
+      const rest = n - k;
+      if (rest > 0) st.stash.add(id, rest);
+      got.push([id, n]);
+    }
+    st.emit('gained', x * TILE + 8, y * TILE, got);
+    this.sfx.thud();
+  }
+
+  private updateGhost() {
+    const st = this.game_;
+    if (!st.buildMode || this.busy) {
+      this.ghost.setVisible(false);
+      st.buildMsg = null;
+      return;
+    }
+    const [x, y] = this.pointerTile();
+    const def = BUILDABLES[st.buildSel];
+    const frame = def.kind === 'wall' ? 'wall_0' : def.kind;
+    const why = this.checkPlacement(x, y);
+    st.buildMsg = why;
+    this.ghost
+      .setFrame(frame)
+      .setPosition(x * TILE + 8, (y + 1) * TILE)
+      .setDepth(def.kind === 'floor' ? -4 : (y + 1) * TILE + 0.5)
+      .setTint(why ? 0xff7a6a : 0x9cff9c)
+      .setVisible(true);
+  }
+
+  /** Doors swing open while you stand in them. */
+  private updateDoors() {
+    const w = this.world;
+    const tiles = this.playerTiles().map(([x, y]) => idx(w, x, y));
+    for (const i of this.doors) {
+      const img = this.buildObjects.get(i)?.find((o) => o.frame.name.startsWith('door'));
+      if (!img) continue;
+      const open = tiles.includes(i) || tiles.includes(i + w.width) || tiles.includes(i - w.width);
+      img.setFrame(open ? 'door_open' : 'door');
+    }
+  }
+
+  private nearChest(tx: number, ty: number) {
+    const w = this.world;
+    for (const i of this.chests) {
+      const cx = i % w.width;
+      const cy = (i - cx) / w.width;
+      if (Math.abs(cx - tx) <= 4 && Math.abs(cy - ty) <= 4) return true;
+    }
+    return false;
   }
 
   // --------------------------------------------------------------- player
@@ -718,6 +937,11 @@ export class WorldScene extends Phaser.Scene {
       const gy = (g.i - gx) / w.width;
       if (w.prop[g.i] === Prop.BareBush) this.setProp(gx, gy, g.prop);
     }
+
+    st.nearStorage = st.atCamp || this.nearChest(tx, ty);
+    if (st.bench && Math.hypot(st.bench[0] - tx, st.bench[1] - ty) > 2.5) st.bench = null;
+    this.updateGhost();
+    this.updateDoors();
 
     this.streamChunks();
     this.updateWatchers(time);

@@ -4,8 +4,14 @@ import { ITEMS, ITEM_ORDER, type ItemId, type Recipe } from './items';
 export class Inventory {
   private counts = new Map<ItemId, number>();
 
-  /** `capacity` is the maximum total weight; Infinity for the stash. */
-  constructor(public capacity = Infinity) {}
+  /** `baseCapacity` is the maximum total weight; Infinity for the stash. Gear can raise it. */
+  constructor(public baseCapacity = Infinity) {}
+
+  get capacity() {
+    let extra = 0;
+    for (const id of this.counts.keys()) extra += ITEMS[id].capacity ?? 0;
+    return this.baseCapacity + extra;
+  }
 
   count(id: ItemId) {
     return this.counts.get(id) ?? 0;
@@ -71,8 +77,14 @@ export class Inventory {
   }
 
   hasTool(tool: 'axe' | 'pick') {
-    for (const id of this.counts.keys()) if (ITEMS[id].tool === tool) return true;
-    return false;
+    return this.toolPower(tool) > 0;
+  }
+
+  /** Strength of the best tool of this type you carry; 0 if none. */
+  toolPower(tool: 'axe' | 'pick') {
+    let best = 0;
+    for (const id of this.counts.keys()) if (ITEMS[id].tool === tool) best = Math.max(best, ITEMS[id].power ?? 1);
+    return best;
   }
 
   /** Entries in display order. */
