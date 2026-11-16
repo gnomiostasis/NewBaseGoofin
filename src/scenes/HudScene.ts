@@ -277,7 +277,7 @@ export class HudScene extends Phaser.Scene {
     this.toast(`Crafted a ${ITEMS[r.makes].name.toLowerCase()}!${extra}`);
   }
 
-  /** Top-centre bar in build mode: the six buildables, their costs, and what's affordable. */
+  /** Top-centre bar in build mode: every buildable, their costs, and what's affordable. */
   private redrawBuild() {
     const gs = this.gs;
     this.buildBox.setVisible(gs.buildMode);
@@ -287,10 +287,10 @@ export class HudScene extends Phaser.Scene {
       return;
     }
     const have = (id: ItemId) => gs.pack.count(id) + (gs.storage?.count(id) ?? 0);
-    const key = `${gs.buildSel}|${!!gs.storage}|${(['wood', 'stone', 'fiber'] as ItemId[]).map(have).join()}`;
+    const key = `${gs.buildSel}|${!!gs.storage}|${(['wood', 'stone', 'fiber', 'copper_ore'] as ItemId[]).map(have).join()}`;
     this.buildMsg.setText(
       gs.buildMsg ??
-        `[Left click] build   [Right click] remove   [1-6] choose   [B] done   ·   using ${gs.storage ? 'pack + storage' : 'pack only'}`,
+        `[Left click] build   [Right click] remove   [1-7] choose   [B] done   ·   using ${gs.storage ? 'pack + storage' : 'pack only'}`,
     );
     this.buildMsg.setColor(gs.buildMsg ? '#f0b8a0' : UI.cream);
     if (key === this.buildKey) return;
@@ -314,8 +314,9 @@ export class HudScene extends Phaser.Scene {
       this.buildBox.add(this.text(x + 8, 12, String(k + 1), 11, UI.wood));
       this.buildBox.add(this.text(x + slot / 2 + 4, 13, b.name, 12, afford ? UI.ink : '#9c8566').setOrigin(0.5, 0));
       this.buildBox.add(this.add.image(x + 24, 78, 'atlas', frame).setOrigin(0.5, 1).setScale(1.5).setAlpha(afford ? 1 : 0.5));
-      (Object.entries(b.cost) as Array<[ItemId, number]>).forEach(([id, n], j) => {
-        const yy = 38 + j * 18;
+      const costs = Object.entries(b.cost) as Array<[ItemId, number]>;
+      costs.forEach(([id, n], j) => {
+        const yy = costs.length > 2 ? 32 + j * 16 : 38 + j * 18;
         this.buildBox.add(this.add.image(x + 52, yy + 7, 'atlas', `item_${id}`));
         this.buildBox.add(this.text(x + 62, yy, `${n}`, 13, have(id) >= n ? '#3f7a3a' : '#a2412f'));
       });

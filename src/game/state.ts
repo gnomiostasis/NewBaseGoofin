@@ -5,6 +5,7 @@ import type { ItemId } from './items';
 import { freshVitals, type Vitals } from './survival';
 import { Sfx } from './sfx';
 import { Progress, type StatMods } from './stats';
+import type { MillState } from './mill';
 
 /** Events the world raises for the HUD to show. */
 export interface GameEvents {
@@ -36,6 +37,8 @@ export class GameState {
   readonly progress = new Progress();
   /** Packs dropped where you collapsed; walk back and press E to pick them up. */
   lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }> = [];
+  /** Lumber mills by tile index. */
+  readonly mills = new Map<number, MillState>();
   readonly events = new Phaser.Events.EventEmitter();
   readonly sfx = new Sfx();
 

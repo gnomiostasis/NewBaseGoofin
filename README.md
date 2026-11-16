@@ -26,7 +26,7 @@ Controls:
 | Space or J | Swing at a creature in front of you (uses energy; an axe hits harder) |
 | F | Eat (mushrooms first, then berries) |
 | C | Hand-crafting (then 1 or 2 to craft) |
-| B | Build mode: 1-6 picks floor, wall, door, chest, bed or workbench; left click builds, right click removes (half the cost back) |
+| B | Build mode: 1-7 picks floor, wall, door, chest, bed, workbench or lumber mill; left click builds, right click removes (half the cost back) |
 | L | Stats: 1-4 spends a point on Strength, Endurance, Agility or Gathering |
 | Esc | Close any panel or build mode |
 | M | Show or hide the map |
@@ -41,6 +41,10 @@ Bramblehogs root around the Old Woods and Duskprowlers hunt in pairs in the Deep
 will follow you into the meadow. If you collapse, your materials stay behind in a dropped pack
 where you fell; walk back and press E to pick it up. Everything you do earns XP, and each level
 (up to 10) gives a point to spend on a stat, so a zone that beat you once gets easier.
+
+A lumber mill (wood, stone and a little copper ore) saws wood from the standing trees within
+3 tiles and drops it into a chest within 3 tiles, even while you're far away. More trees means
+faster sawing, up to 6. It stops when storage holds 150 wood. Press E at a mill to see how it's doing.
 
 ## Other commands
 
@@ -59,7 +63,7 @@ where you fell; walk back and press E to pick it up. Everything you do earns XP,
 | `src/world/generate.ts` | Builds the map from a seed: zones, ponds, trees, rocks, trails and the starting camp. No Phaser here, so it's easy to test |
 | `src/world/shade.ts` | How dark and cool the world gets with distance from camp |
 | `src/art/` | The palette and the code that paints every tile and sprite |
-| `src/game/` | Items, the pack and stash, gathering rules, survival bars and sound effects. No Phaser rendering, so it's testable |
+| `src/game/` | Items, the pack and stash, gathering, survival, building, creatures, stats, the lumber mill and sound effects. No Phaser rendering, so it's testable |
 | `src/scenes/` | Phaser scenes: boot (makes textures), world (map, player, camera), HUD |
 | `tests/` | Vitest tests for world generation and the survival rules |
 
@@ -69,5 +73,5 @@ where you fell; walk back and press E to pick it up. Everything you do earns XP,
 2. **Gather and carry** (done): harvest trees, rocks and bushes; an inventory with a carry limit; health, hunger and stamina.
 3. **Build the base** (done): grid placement, walls, floors, chests, a bed and a workbench.
 4. **Danger and leveling** (done): creatures in the outer zones, melee combat, XP and four stats.
-5. **First automation**: a lumber mill that fills a chest with wood over time.
+5. **First automation** (done): a lumber mill that fills a chest with wood over time.
 6. **Save, balance, share**: save and load, a title screen, tuning, a public link.
