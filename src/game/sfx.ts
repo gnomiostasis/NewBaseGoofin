@@ -77,6 +77,27 @@ export class Sfx {
     setTimeout(() => this.noise(0.06, 0.2, 1300), 110);
   }
 
+  levelUp() {
+    [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.16, 'square', 0.045, undefined, i * 0.09));
+  }
+
+  swing() {
+    this.noise(0.07, 0.12, 2500);
+  }
+
+  hit() {
+    this.tone(220, 0.09, 'square', 0.08, 120);
+    this.noise(0.06, 0.25, 1200);
+  }
+
+  hurt() {
+    this.tone(300, 0.18, 'sawtooth', 0.07, 110);
+  }
+
+  growl() {
+    this.tone(90, 0.35, 'sawtooth', 0.05, 60);
+  }
+
   craft() {
     this.tone(523, 0.09, 'square', 0.04);
     this.tone(659, 0.09, 'square', 0.04, undefined, 0.08);

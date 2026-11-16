@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
-import { PLAYER, SPRINT_MULTIPLIER, SURVIVAL, TILE } from '../config';
+import { PACK, PLAYER, SPRINT_MULTIPLIER, SURVIVAL, TILE } from '../config';
+import { CreatureSystem } from './CreatureSystem';
+import { COMBAT, playerDamage } from '../game/creatures';
+import { LEVELING } from '../game/stats';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
   Ground,
@@ -60,7 +63,8 @@ type Target =
   | { kind: 'prop'; i: number; tx: number; ty: number; rule: GatherRule; prop: Prop }
   | { kind: 'camp'; tx: number; ty: number; what: CampObjectKind }
   | { kind: 'regrowing'; tx: number; ty: number }
-  | { kind: 'build'; tx: number; ty: number; what: BuildKind };
+  | { kind: 'build'; tx: number; ty: number; what: BuildKind }
+  | { kind: 'lostpack'; tx: number; ty: number; k: number };
 
 export class WorldScene extends Phaser.Scene {
   world!: World;
@@ -72,6 +76,15 @@ export class WorldScene extends Phaser.Scene {
   >;
   private facing: Dir = 'down';
   private collideLayer!: Phaser.Tilemaps.TilemapLayer;
+  get collisionLayer() {
+    return this.collideLayer;
+  }
+  creatures!: CreatureSystem;
+  private nextAttack = 0;
+  private invulnUntil = 0;
+  private knockUntil = 0;
+  private lostPackImages: Phaser.GameObjects.Image[] = [];
+  private queuedAttack = false;
   private chunks = new Set<number>();
   private chunkTiles = new Map<number, number[]>();
   private propObjects = new Map<number, Phaser.GameObjects.Image[]>();
@@ -84,7 +97,7 @@ export class WorldScene extends Phaser.Scene {
   private target: Target | null = null;
   private lastPrompt = '';
   private nextSwing = 0;
-  private busy = false; // resting or fainted: no input
+  busy = false; // resting or fainted: no input
   private sfx!: Sfx;
   readonly state: PlayerState = { x: 0, y: 0, tx: 0, ty: 0, zone: 0, depth: 0, atEdge: false };
 
@@ -100,6 +113,7 @@ export class WorldScene extends Phaser.Scene {
     this.createAnimations();
     this.buildCamp();
     this.createPlayer();
+    this.creatures = new CreatureSystem(this);
     this.setupCamera();
     this.targetMarker = this.add.image(0, 0, 'atlas', 'target').setDepth(200000).setVisible(false);
     this.tweens.add({ targets: this.targetMarker, alpha: 0.55, duration: 500, yoyo: true, repeat: -1 });
@@ -121,7 +135,8 @@ export class WorldScene extends Phaser.Scene {
 
     // Queue taps from key events too, so a very quick press is never lost between frames.
     this.input.keyboard!.on('keydown-E', () => (this.queuedAct = true));
-    this.input.keyboard!.on('keydown-SPACE', () => (this.queuedAct = true));
+    this.input.keyboard!.on('keydown-SPACE', () => (this.queuedAttack = true));
+    this.input.keyboard!.on('keydown-J', () => (this.queuedAttack = true));
     this.input.keyboard!.on('keydown-F', () => (this.queuedEat = true));
     this.input.keyboard!.on('keydown-B', (ev: KeyboardEvent) => {
       if (ev.repeat) return;
@@ -441,6 +456,8 @@ export class WorldScene extends Phaser.Scene {
     for (const [tx, ty] of candidates) {
       if (!inBounds(w, tx, ty)) continue;
       const i = idx(w, tx, ty);
+      const lost = this.game_.lostPacks.findIndex((l) => l.tx === tx && l.ty === ty);
+      if (lost >= 0) return { kind: 'lostpack', tx, ty, k: lost };
       const b = w.build[i];
       if (b === Build.Chest || b === Build.Bed || b === Build.Workbench) return { kind: 'build', tx, ty, what: KIND_OF[b] };
       const camp = this.campAt.get(i);
@@ -458,6 +475,7 @@ export class WorldScene extends Phaser.Scene {
   private describe(t: Target): [string, boolean] {
     const pack = this.game_.pack;
     if (t.kind === 'regrowing') return ['Picked clean. Berries will grow back.', true];
+    if (t.kind === 'lostpack') return ['Pick up your lost pack', false];
     if (t.kind === 'build') {
       if (t.what === 'chest') return ['Store materials in chest', false];
       if (t.what === 'bed') return ['Sleep (you will wake here)', false];
@@ -477,6 +495,11 @@ export class WorldScene extends Phaser.Scene {
     if (!t || time < this.nextSwing) return;
     const st = this.game_;
     if (t.kind === 'regrowing') return;
+    if (t.kind === 'lostpack') {
+      this.nextSwing = time + 400;
+      this.recoverPack(t.k);
+      return;
+    }
     if (t.kind === 'build') {
       this.nextSwing = time + 400;
       if (t.what === 'chest') this.storeMaterials();
@@ -508,7 +531,7 @@ export class WorldScene extends Phaser.Scene {
       this.nextSwing = time + 400;
       return;
     }
-    if (!spendStamina(st.vitals, rule.stamina)) {
+    if (!spendStamina(st.vitals, rule.stamina * st.mods.toolStaminaMul)) {
       st.emit('toast', 'Too tired. Rest a moment, or eat something.');
       this.nextSwing = time + 500;
       return;
@@ -526,10 +549,13 @@ export class WorldScene extends Phaser.Scene {
     }
     this.hits.delete(t.i);
     const got: Array<[ItemId, number]> = [];
-    for (const [id, n] of rule.yields) {
-      const k = st.pack.add(id, n);
+    const bonus = Math.random() < st.mods.bonusYieldChance ? 1 : 0;
+    rule.yields.forEach(([id, n], j) => {
+      const k = st.pack.add(id, n + (j === 0 ? bonus : 0));
       if (k > 0) got.push([id, k]);
-    }
+    });
+    const xp = LEVELING.xp;
+    st.addXp(t.prop === Prop.OreRock ? xp.ore : t.prop === Prop.Rock ? xp.mine : rule.tool === 'axe' ? xp.chop : xp.pickup);
     if (got.length < rule.yields.length || got.some(([id, k]) => k < (rule.yields.find((y) => y[0] === id)?.[1] ?? 0))) {
       st.emit('toast', 'Your pack is full. Some of it had to be left behind.');
     }
@@ -616,7 +642,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     st.pack.remove(food);
-    eat(st.vitals, ITEMS[food].food ?? 0, ITEMS[food].heal ?? 0);
+    eat(st.vitals, ITEMS[food].food ?? 0, ITEMS[food].heal ?? 0, st.mods.maxHealth);
     st.emit('toast', `Ate ${ITEMS[food].name.toLowerCase()}.`);
     this.sfx.munch();
   }
@@ -629,15 +655,90 @@ export class WorldScene extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.fadeOut(900, 0, 0, 0);
     cam.once('camerafadeoutcomplete', () => {
+      const dropped = st.pack.entries().filter(([id]) => ITEMS[id].kind !== 'tool');
+      if (dropped.length) st.lostPacks.push({ tx: this.state.tx, ty: this.state.ty, items: dropped });
       st.pack.clear((id) => ITEMS[id].kind === 'tool');
+      this.renderLostPacks();
+      this.creatures.clear();
       st.vitals = { ...freshVitals(), health: 50, hunger: 50, stamina: 50 };
       const bed = st.respawn && this.world.build[idx(this.world, ...st.respawn)] === Build.Bed ? st.respawn : null;
       if (bed) this.player.setPosition(bed[0] * TILE + 8, (bed[1] + 1) * TILE + 6);
       else this.player.setPosition(this.world.campX * TILE + 8, (this.world.campY + 1) * TILE + 10);
       cam.fadeIn(900, 0, 0, 0);
-      st.emit('toast', `You collapsed and woke up ${bed ? 'in your bed' : 'at camp'}. Everything in your pack is gone.`);
+      st.emit(
+        'toast',
+        `You collapsed and woke up ${bed ? 'in your bed' : 'at camp'}.${dropped.length ? ' Your pack is where you fell.' : ''}`,
+      );
       this.busy = false;
     });
+  }
+
+  // --------------------------------------------------------------- combat
+
+  private attack(time: number) {
+    const st = this.game_;
+    if (time < this.nextAttack || this.busy) return;
+    if (!spendStamina(st.vitals, COMBAT.swingStamina)) {
+      st.emit('toast', 'Too tired to swing.');
+      this.nextAttack = time + 400;
+      return;
+    }
+    this.nextAttack = time + COMBAT.swingCooldownMs;
+    const [dx, dy] = DIR_STEP[this.facing];
+    const cx = this.player.x;
+    const cy = this.player.body.center.y - 3;
+    const slash = this.add
+      .image(cx + dx * 9, cy + dy * 9, 'atlas', 'slash')
+      .setRotation(Math.atan2(dy, dx))
+      .setDepth(200004);
+    this.tweens.add({ targets: slash, alpha: 0, duration: 160, onComplete: () => slash.destroy() });
+    this.tweens.add({ targets: this.player, x: this.player.x + dx * 2, y: this.player.y + dy * 2, duration: 60, yoyo: true });
+    this.sfx.swing();
+    const damage = playerDamage(st.mods, st.pack.toolPower('axe'));
+    if (this.creatures.hit(cx, cy, dx, dy, COMBAT.reach, damage, time) > 0) {
+      this.sfx.hit();
+      this.cameras.main.shake(60, 0.003);
+    }
+  }
+
+  hurtPlayer(damage: number, fromX: number, fromY: number, time: number) {
+    const st = this.game_;
+    if (time < this.invulnUntil || this.busy) return;
+    this.invulnUntil = time + COMBAT.invulnMs;
+    st.vitals.health = Math.max(0, st.vitals.health - damage);
+    const a = Math.atan2(this.player.body.center.y - fromY, this.player.x - fromX);
+    this.player.setVelocity(Math.cos(a) * 190, Math.sin(a) * 190);
+    this.knockUntil = time + 160;
+    this.player.setTintFill(0xff6a5a);
+    this.time.delayedCall(110, () => this.player.clearTint());
+    this.cameras.main.shake(120, 0.006);
+    this.sfx.hurt();
+    st.events.emit('hurt', damage);
+  }
+
+  private renderLostPacks() {
+    for (const o of this.lostPackImages) o.destroy();
+    this.lostPackImages = this.game_.lostPacks.map((l) =>
+      this.add.image(l.tx * TILE + 8, (l.ty + 1) * TILE, 'atlas', 'lost_pack').setOrigin(0.5, 1).setDepth((l.ty + 1) * TILE - 6),
+    );
+  }
+
+  private recoverPack(k: number) {
+    const st = this.game_;
+    const lost = st.lostPacks[k];
+    const got: Array<[ItemId, number]> = [];
+    lost.items = lost.items
+      .map(([id, n]): [ItemId, number] => {
+        const added = st.pack.add(id, n);
+        if (added) got.push([id, added]);
+        return [id, n - added];
+      })
+      .filter(([, n]) => n > 0);
+    if (lost.items.length === 0) st.lostPacks.splice(k, 1);
+    else st.emit('toast', 'Your pack is too full to take everything back.');
+    this.renderLostPacks();
+    if (got.length) st.emit('gained', lost.tx * TILE + 8, lost.ty * TILE, got);
+    this.sfx.pickup();
   }
 
   // ------------------------------------------------------------- building
@@ -724,6 +825,7 @@ export class WorldScene extends Phaser.Scene {
     this.renderBuild(x, y);
     this.refreshAround(x, y);
     this.sfx.chop();
+    st.addXp(LEVELING.xp.build);
     for (const o of this.buildObjects.get(i) ?? []) {
       o.setScale(1.15);
       this.tweens.add({ targets: o, scale: 1, duration: 140, ease: 'Back.easeOut' });
@@ -861,9 +963,10 @@ export class WorldScene extends Phaser.Scene {
     }
     const moving = vx !== 0 || vy !== 0;
     const sprinting = moving && k.shift.isDown && st.vitals.stamina > 1;
-    const speed = PLAYER.speed * (sprinting ? SPRINT_MULTIPLIER : 1) * (st.vitals.hunger <= 0 ? 0.8 : 1);
+    const speed = PLAYER.speed * st.mods.speedMul * (sprinting ? SPRINT_MULTIPLIER : 1) * (st.vitals.hunger <= 0 ? 0.8 : 1);
     const len = Math.hypot(vx, vy) || 1;
-    this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
+    if (time >= this.knockUntil) this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
+    st.pack.baseCapacity = PACK.capacity + st.mods.carryBonus;
 
     if (moving) {
       // Face the axis you're pushing; on diagonals keep the current facing if it fits.
@@ -893,7 +996,7 @@ export class WorldScene extends Phaser.Scene {
     const tx = Phaser.Math.Clamp(Math.floor(this.player.x / TILE), 0, w.width - 1);
     const ty = Phaser.Math.Clamp(Math.floor(feetY / TILE), 0, w.height - 1);
     const i = idx(w, tx, ty);
-    this.player.setTint(tintAt(w.depth[i]));
+    if (!this.player.tintFill) this.player.setTint(tintAt(w.depth[i]));
 
     const s = this.state;
     s.x = this.player.x;
@@ -907,7 +1010,7 @@ export class WorldScene extends Phaser.Scene {
     // Survival.
     st.atCamp = Math.hypot(tx - w.campX, ty - w.campY) <= SURVIVAL.campRadius;
     if (!this.busy) {
-      st.vitals = tickVitals(st.vitals, { dt: delta / 1000, moving, sprinting, atCamp: st.atCamp });
+      st.vitals = tickVitals(st.vitals, { dt: delta / 1000, moving, sprinting, atCamp: st.atCamp }, st.mods);
       if (st.vitals.health <= 0) this.faint();
     }
 
@@ -923,7 +1026,7 @@ export class WorldScene extends Phaser.Scene {
       if (this.lastPrompt !== '') st.emit('prompt', null, false);
       this.lastPrompt = '';
     }
-    if (!this.busy && (this.queuedAct || k.e.isDown || k.space.isDown)) this.act(time);
+    if (!this.busy && (this.queuedAct || k.e.isDown)) this.act(time);
     if (!this.busy && this.queuedEat) this.eatSomething();
     this.queuedAct = false;
     this.queuedEat = false;
@@ -940,6 +1043,9 @@ export class WorldScene extends Phaser.Scene {
 
     st.nearStorage = st.atCamp || this.nearChest(tx, ty);
     if (st.bench && Math.hypot(st.bench[0] - tx, st.bench[1] - ty) > 2.5) st.bench = null;
+    if (this.queuedAttack || (!this.busy && (k.space.isDown))) this.attack(time);
+    this.queuedAttack = false;
+    this.creatures.update(time);
     this.updateGhost();
     this.updateDoors();
 

@@ -5,6 +5,7 @@ import { Ground, Prop } from '../world/generate';
 import { darknessAt, tintAt } from '../world/shade';
 import { BENCH_RECIPES, HAND_RECIPES, ITEMS, type ItemId, type Recipe } from '../game/items';
 import { BUILDABLES, payCost } from '../game/build';
+import { LEVELING, STAT_INFO, STAT_ORDER, xpToNext } from '../game/stats';
 import { GameState } from '../game/state';
 import type { WorldScene } from './WorldScene';
 
@@ -18,7 +19,7 @@ const ZONE_BLURBS: Record<number, string> = {
   3: 'Cold and dark. Something watches from between the pines.',
 };
 
-const HINT = '[WASD] walk    [Shift] run    [E] gather    [F] eat    [C] craft    [B] build    [M] map';
+const HINT = '[WASD] walk   [Shift] run   [E] use   [Space] attack   [F] eat   [C] craft   [B] build   [L] stats   [M] map';
 
 /** Screen-space overlay: vitals, compass, pack, prompts, crafting, stash, minimap, banners. */
 export class HudScene extends Phaser.Scene {
@@ -43,6 +44,11 @@ export class HudScene extends Phaser.Scene {
   private toasts: Phaser.GameObjects.Text[] = [];
   private craftBox!: Phaser.GameObjects.Container;
   private craftKey = '';
+  private levelText!: Phaser.GameObjects.Text;
+  private statsOpen = false;
+  private statsKey = '';
+  private statsBox!: Phaser.GameObjects.Container;
+  private hurtFlash!: Phaser.GameObjects.Rectangle;
   private handOpen = false;
   private buildBox!: Phaser.GameObjects.Container;
   private buildMsg!: Phaser.GameObjects.Text;
@@ -66,12 +72,13 @@ export class HudScene extends Phaser.Scene {
     this.hungerFlash = this.add.rectangle(0, 0, 10, 10, 0x8a1f1f, 0).setOrigin(0);
 
     const panel = this.add.graphics();
-    this.drawPanel(panel, 12, 12, 250, 112);
+    this.drawPanel(panel, 12, 12, 250, 132);
     this.zoneText = this.text(26, 20, 'Camp', 20, UI.ink);
     this.campText = this.text(48, 44, '', 14, UI.ink);
     this.arrow = this.add.triangle(34, 51, 0, 12, 6, 0, 12, 12, hex(UI.wood)).setOrigin(0.5);
     this.bars = this.add.graphics();
     for (const [k, label] of ['Health', 'Food', 'Energy'].entries()) this.text(26, 66 + k * 16, label, 12, UI.ink);
+    this.levelText = this.text(26, 114, 'Lv 1', 12, UI.ink);
 
     this.buildBanner();
     this.buildMinimap();
@@ -80,6 +87,8 @@ export class HudScene extends Phaser.Scene {
     this.craftBox = this.add.container(0, 0).setVisible(false);
     this.stashBox = this.add.container(0, 0);
     this.buildBox = this.add.container(0, 0).setVisible(false);
+    this.statsBox = this.add.container(0, 0).setVisible(false);
+    this.hurtFlash = this.add.rectangle(0, 0, 10, 10, 0xc8302a, 1).setOrigin(0).setAlpha(0);
     this.buildMsg = this.text(0, 0, '', 15, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 4);
     this.hint = this.text(0, 0, HINT, 15, UI.cream).setOrigin(0.5, 1).setStroke(UI.ink, 4);
 
@@ -100,12 +109,41 @@ export class HudScene extends Phaser.Scene {
     kb.on('keydown', (ev: KeyboardEvent) => {
       const n = Number(ev.key);
       if (!(n >= 1 && n <= 9)) return;
+      if (this.statsOpen) {
+        if (n <= STAT_ORDER.length && this.gs.progress.spend(STAT_ORDER[n - 1])) {
+          this.gs.sfx.craft();
+    this.gs.addXp(LEVELING.xp.craft);
+          this.statsKey = '';
+        }
+        return;
+      }
       const recipes = this.openRecipes();
       if (recipes) {
         if (n <= recipes.length) this.craft(recipes[n - 1], this.gs.bench !== null);
       } else if (this.gs.buildMode && n <= BUILDABLES.length) this.gs.buildSel = n - 1;
     });
 
+    kb.on('keydown-L', (ev: KeyboardEvent) => {
+      if (ev.repeat) return;
+      this.statsOpen = !this.statsOpen;
+      this.statsKey = '';
+    });
+    kb.on('keydown-ESC', () => (this.statsOpen = false));
+    this.gs.on('levelup', (lv) => {
+      this.showBanner(`Level ${lv}!`, 'You have a stat point to spend. Press L.');
+      this.statsKey = '';
+    });
+    this.gs.events.on('hurt', () => {
+      this.hurtFlash.setAlpha(0.35);
+      this.tweens.add({ targets: this.hurtFlash, alpha: 0, duration: 350 });
+    });
+    this.worldScene.events.on('creature-hit', (wx: number, wy: number, dmg: number) => {
+      const cam = this.worldScene.cameras.main;
+      const t = this.text((wx - cam.worldView.x) * cam.zoom, (wy - cam.worldView.y) * cam.zoom, String(dmg), 18, '#ffd27a')
+        .setOrigin(0.5)
+        .setStroke(UI.ink, 4);
+      this.tweens.add({ targets: t, y: t.y - 28, alpha: 0, duration: 600, ease: 'Quad.easeOut', onComplete: () => t.destroy() });
+    });
     this.gs.on('toast', (t) => this.toast(t));
     this.gs.on('gained', (wx, wy, items) => this.floatGain(wx, wy, items));
     this.gs.on('prompt', (t, blocked) => {
@@ -431,7 +469,9 @@ export class HudScene extends Phaser.Scene {
     this.packBox.setPosition(width / 2, height - 8);
     this.prompt.setPosition(width / 2, height - 116);
     this.craftBox.setPosition(width / 2, Math.round(height * 0.28));
-    this.stashBox.setPosition(12, 132);
+    this.stashBox.setPosition(12, 152);
+    this.statsBox.setPosition(width / 2, Math.round(height * 0.2));
+    this.hurtFlash.setSize(width, height);
     this.buildBox.setPosition(width / 2, 12);
     this.buildMsg.setPosition(width / 2, 108);
     const size = this.worldScene.world.width * this.mapScale;
@@ -445,7 +485,7 @@ export class HudScene extends Phaser.Scene {
     const g = this.bars;
     g.clear();
     const rows: Array<[number, number, string, string]> = [
-      [v.health, SURVIVAL.maxHealth, '#d8434e', '#f07c84'],
+      [v.health, this.gs.mods.maxHealth, '#d8434e', '#f07c84'],
       [v.hunger, SURVIVAL.maxHunger, '#e0892c', '#f6b45e'],
       [v.stamina, SURVIVAL.maxStamina, '#7fc25a', '#b6e38c'],
     ];
@@ -459,6 +499,52 @@ export class HudScene extends Phaser.Scene {
       g.fillStyle(hex(c)).fillRect(x + 1, y + 1, f, 9);
       g.fillStyle(hex(light)).fillRect(x + 1, y + 1, f, 2);
     });
+    // XP toward the next level.
+    const p = this.gs.progress;
+    const need = xpToNext(p.level);
+    const frac = p.level >= LEVELING.maxLevel ? 1 : p.xp / need;
+    g.fillStyle(hex(UI.outline)).fillRect(90, 117, 150, 7);
+    g.fillStyle(hex('#5b4632')).fillRect(91, 118, 148, 5);
+    g.fillStyle(hex('#6fb3e0')).fillRect(91, 118, Math.round(148 * frac), 5);
+    const label = `Lv ${p.level}${p.points ? `  +${p.points}` : ''}`;
+    if (this.levelText.text !== label) this.levelText.setText(label).setColor(p.points ? '#a2412f' : UI.ink);
+  }
+
+  /** Character sheet (L): level, XP, and the four stats with [1-4] to spend points. */
+  private redrawStats() {
+    this.statsBox.setVisible(this.statsOpen);
+    if (!this.statsOpen) return;
+    const p = this.gs.progress;
+    const key = `${p.level}|${p.xp}|${p.points}|${STAT_ORDER.map((s) => p.stats[s]).join()}`;
+    if (key === this.statsKey) return;
+    this.statsKey = key;
+    this.statsBox.removeAll(true);
+    const w = 420;
+    const h = 92 + STAT_ORDER.length * 40;
+    const g = this.add.graphics();
+    this.drawPanel(g, -w / 2, 0, w, h);
+    this.statsBox.add(g);
+    this.statsBox.add(this.text(-w / 2 + 20, 14, `Level ${p.level}`, 20, UI.ink));
+    const next = p.level >= LEVELING.maxLevel ? 'Max level' : `${p.xp} / ${xpToNext(p.level)} XP`;
+    this.statsBox.add(this.text(-w / 2 + 120, 20, next, 13, UI.wood));
+    this.statsBox.add(
+      this.text(w / 2 - 20, 18, p.points ? `${p.points} point${p.points > 1 ? 's' : ''} to spend` : 'L to close', 13, p.points ? '#a2412f' : UI.wood).setOrigin(1, 0),
+    );
+    STAT_ORDER.forEach((id, k) => {
+      const y = 52 + k * 40;
+      const val = p.stats[id];
+      const canSpend = p.points > 0 && val < LEVELING.maxPerStat;
+      this.statsBox.add(this.text(-w / 2 + 20, y + 4, `${k + 1}`, 16, canSpend ? UI.ink : '#9c8566'));
+      this.statsBox.add(this.text(-w / 2 + 44, y, STAT_INFO[id].name, 15, UI.ink));
+      this.statsBox.add(this.text(-w / 2 + 44, y + 18, STAT_INFO[id].perPoint, 11, UI.wood));
+      const pips = this.add.graphics();
+      for (let i = 0; i < LEVELING.maxPerStat; i++) {
+        pips.fillStyle(hex(UI.outline)).fillRect(w / 2 - 20 - (LEVELING.maxPerStat - i) * 14, y + 6, 11, 11);
+        pips.fillStyle(hex(i < val ? '#e0892c' : '#d9c49a')).fillRect(w / 2 - 19 - (LEVELING.maxPerStat - i) * 14, y + 7, 9, 9);
+      }
+      this.statsBox.add(pips);
+    });
+    this.statsBox.add(this.text(0, h - 26, '1-4 spends a point. Gather, craft, build and fight for XP.', 11, UI.wood).setOrigin(0.5, 0));
   }
 
   update(_time: number, delta: number) {
@@ -485,6 +571,7 @@ export class HudScene extends Phaser.Scene {
     }
 
     this.drawBars();
+    this.redrawStats();
     this.redrawPack();
     this.redrawCraft();
     this.redrawBuild();

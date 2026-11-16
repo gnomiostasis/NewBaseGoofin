@@ -22,10 +22,12 @@ Controls:
 | --- | --- |
 | WASD / arrows | Walk |
 | Shift | Run (uses energy) |
-| E or Space | Gather what's in front of you; hold to keep chopping or mining. At camp: store materials in the crate, rest on the bedroll |
+| E | Gather what's in front of you; hold to keep chopping or mining. At camp: store materials in the crate, rest on the bedroll |
+| Space or J | Swing at a creature in front of you (uses energy; an axe hits harder) |
 | F | Eat (mushrooms first, then berries) |
 | C | Hand-crafting (then 1 or 2 to craft) |
 | B | Build mode: 1-6 picks floor, wall, door, chest, bed or workbench; left click builds, right click removes (half the cost back) |
+| L | Stats: 1-4 spends a point on Strength, Endurance, Agility or Gathering |
 | Esc | Close any panel or build mode |
 | M | Show or hide the map |
 
@@ -34,6 +36,11 @@ Your first job: pick up sticks and stones and pull some grass near camp, then cr
 Building takes materials from your pack, plus from storage when you're near camp or a chest
 (chests and the camp stash share one storage). Sleep in a bed and you'll wake there if you
 collapse. A workbench crafts copper tools (twice as fast) and a woven basket (+20 pack space).
+
+Bramblehogs root around the Old Woods and Duskprowlers hunt in pairs in the Deepwild. Neither
+will follow you into the meadow. If you collapse, your materials stay behind in a dropped pack
+where you fell; walk back and press E to pick it up. Everything you do earns XP, and each level
+(up to 10) gives a point to spend on a stat, so a zone that beat you once gets easier.
 
 ## Other commands
 
@@ -61,6 +68,6 @@ collapse. A workbench crafts copper tools (twice as fast) and a woven basket (+2
 1. **Walk the wilds** (done): a large map with a camp and three zones, a player you can walk around, a following camera.
 2. **Gather and carry** (done): harvest trees, rocks and bushes; an inventory with a carry limit; health, hunger and stamina.
 3. **Build the base** (done): grid placement, walls, floors, chests, a bed and a workbench.
-4. **Danger and leveling**: creatures in the outer zones, melee combat, XP and four stats.
+4. **Danger and leveling** (done): creatures in the outer zones, melee combat, XP and four stats.
 5. **First automation**: a lumber mill that fills a chest with wood over time.
 6. **Save, balance, share**: save and load, a title screen, tuning, a public link.

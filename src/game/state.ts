@@ -4,6 +4,7 @@ import { Inventory } from './inventory';
 import type { ItemId } from './items';
 import { freshVitals, type Vitals } from './survival';
 import { Sfx } from './sfx';
+import { Progress, type StatMods } from './stats';
 
 /** Events the world raises for the HUD to show. */
 export interface GameEvents {
@@ -12,6 +13,7 @@ export interface GameEvents {
   gained: (wx: number, wy: number, items: Array<[ItemId, number]>) => void;
   /** What pressing E would do right now, or null. */
   prompt: (text: string | null, blocked: boolean) => void;
+  levelup: (level: number) => void;
 }
 
 /** Everything about the player's run that the world and the HUD both need. */
@@ -31,6 +33,9 @@ export class GameState {
   bench: [number, number] | null = null;
   /** Where you wake after collapsing: the last bed you slept in, else camp. */
   respawn: [number, number] | null = null;
+  readonly progress = new Progress();
+  /** Packs dropped where you collapsed; walk back and press E to pick them up. */
+  lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }> = [];
   readonly events = new Phaser.Events.EventEmitter();
   readonly sfx = new Sfx();
 
@@ -40,6 +45,18 @@ export class GameState {
 
   on<K extends keyof GameEvents>(name: K, fn: GameEvents[K], ctx?: unknown) {
     this.events.on(name, fn, ctx);
+  }
+
+  get mods(): StatMods {
+    return this.progress.mods;
+  }
+
+  addXp(n: number) {
+    const ups = this.progress.gain(n);
+    if (ups > 0) {
+      this.emit('levelup', this.progress.level);
+      this.sfx.levelUp();
+    }
   }
 
   /** Stored materials you can reach right now. */

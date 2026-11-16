@@ -586,6 +586,71 @@ function iconBasket(g: Ctx) {
   rect(g, 12, 3, 1, 3, OUTLINE);
 }
 
+// --- creatures -------------------------------------------------------------
+
+const HOG = ['#7a5a3e', '#5e4430', '#9a7656', OUTLINE] as const;
+
+/** 16 x 16 bristly boar with thorny back, facing right. */
+function bramblehog(g: Ctx, frame: number) {
+  shadow(g, 8, 14, 7, 1.2, 0.3);
+  blob(g, [[7, 9, 5], [10, 9, 4.5], [5, 10, 4]], HOG, { seed: 21 });
+  // Snout and tusk.
+  rect(g, 13, 9, 3, 3, OUTLINE);
+  rect(g, 13, 10, 2, 1, '#c99a7a');
+  px(g, 14, 12, '#efe3cf');
+  px(g, 11, 8, OUTLINE);
+  // Thorns along the back.
+  for (const [x, y] of [[4, 4], [6, 3], [8, 3], [10, 4]]) {
+    px(g, x, y, '#6a8a3a');
+    px(g, x, y + 1, '#4a6a2a');
+  }
+  // Legs, alternating.
+  const a = frame === 0 ? 0 : 1;
+  rect(g, 4 + a, 13, 2, 2, OUTLINE);
+  rect(g, 10 - a, 13, 2, 2, OUTLINE);
+}
+
+/** 20 x 16 lean shadowy prowler with glowing eyes, facing right. */
+function duskprowler(g: Ctx, frame: number) {
+  const P = ['#3a3f5c', '#2a2e45', '#545a7e', '#14162a'] as const;
+  shadow(g, 10, 14, 9, 1.2, 0.35);
+  blob(g, [[8, 9, 4], [12, 9, 4], [5, 9, 3]], P, { seed: 31 });
+  // Head and ears.
+  blob(g, [[16, 7, 3.2]], P, { seed: 32 });
+  px(g, 15, 3, P[3]);
+  px(g, 17, 3, P[3]);
+  px(g, 15, 4, P[1]);
+  px(g, 17, 4, P[1]);
+  px(g, 17, 6, '#ffe36a');
+  px(g, 15, 6, '#ffe36a');
+  // Tail.
+  rect(g, 0, 7, 3, 1, P[3]);
+  px(g, 1, 6, P[1]);
+  const a = frame === 0 ? 0 : 1;
+  rect(g, 5 + a, 12, 1, 3, P[3]);
+  rect(g, 8 - a, 12, 1, 3, P[3]);
+  rect(g, 12 + a, 12, 1, 3, P[3]);
+  rect(g, 15 - a, 12, 1, 3, P[3]);
+}
+
+function lostPack(g: Ctx) {
+  shadow(g, 8, 14, 6, 1.2, 0.3);
+  blob(g, [[8, 10, 5], [8, 6, 3]], ['#8a5a36', '#6b4428', '#a87448', OUTLINE]);
+  rect(g, 5, 8, 6, 1, '#5a3a24');
+  rect(g, 7, 2, 2, 2, '#e0b13a');
+}
+
+/** 16 x 16 swing arc, drawn for a swing to the right; rotated for other directions. */
+function slash(g: Ctx) {
+  for (let a = -60; a <= 60; a += 6) {
+    const r = (a * Math.PI) / 180;
+    const x = Math.round(4 + Math.cos(r) * 9);
+    const y = Math.round(8 + Math.sin(r) * 7);
+    px(g, x, y, '#fff6dc');
+    px(g, x - 1, y, 'rgba(255,246,220,0.5)');
+  }
+}
+
 // --- camp ---------------------------------------------------------------
 
 function tent(g: Ctx) {
@@ -846,6 +911,10 @@ export function buildTextures(scene: Phaser.Scene) {
   atlas.add('item_stick', 16, 16, (g) => sticksOnGround(g, 0));
   atlas.add('target', 18, 18, targetCorners);
   atlas.add('floor', 16, 16, floorTile);
+  for (let f = 0; f < 2; f++) atlas.add(`bramblehog_${f}`, 16, 16, (g) => bramblehog(g, f));
+  for (let f = 0; f < 2; f++) atlas.add(`duskprowler_${f}`, 20, 16, (g) => duskprowler(g, f));
+  atlas.add('lost_pack', 16, 16, lostPack);
+  atlas.add('slash', 16, 16, slash);
   for (let m = 0; m < 16; m++) atlas.add(`wall_${m}`, 16, 26, (g) => wallPiece(g, m));
   atlas.add('door', 16, 26, (g) => door(g, false));
   atlas.add('door_open', 16, 26, (g) => door(g, true));
