@@ -20,9 +20,13 @@ export enum Prop {
   Flowers = 7,
   TallGrass = 8,
   Camp = 9, // footprint of a camp object; the object itself is listed in `campObjects`
+  Sticks = 10,
+  Pebbles = 11,
+  Stump = 12, // what's left after chopping a tree
+  BareBush = 13, // a berry bush that's been picked; regrows
 }
 
-const BLOCKING = new Set<Prop>([Prop.Tree, Prop.Rock, Prop.OreRock, Prop.BerryBush, Prop.Log, Prop.Camp]);
+const BLOCKING = new Set<Prop>([Prop.Tree, Prop.Rock, Prop.OreRock, Prop.BerryBush, Prop.BareBush, Prop.Log, Prop.Camp]);
 
 export type CampObjectKind = 'tent' | 'campfire' | 'bedroll' | 'stump' | 'sack' | 'lantern' | 'crate';
 
@@ -140,6 +144,8 @@ export function generateWorld(seed = WORLD.seed, width = WORLD.width, height = W
       else if (r2 < 0.05) world.prop[i] = z === 3 ? Prop.Mushroom : Prop.BerryBush;
       else if (r2 < 0.058) world.prop[i] = Prop.Log;
       else if (r2 < 0.1 && z === 3) world.prop[i] = Prop.Mushroom;
+      else if (r2 < 0.075) world.prop[i] = Prop.Sticks;
+      else if (r2 < 0.09) world.prop[i] = Prop.Pebbles;
       else if (r2 < 0.16 && z <= 2) world.prop[i] = z === 1 ? Prop.Flowers : Prop.TallGrass;
       else if (r2 < 0.24 && z <= 2) world.prop[i] = Prop.TallGrass;
     }
@@ -156,10 +162,39 @@ export function generateWorld(seed = WORLD.seed, width = WORLD.width, height = W
   // 5. The day-one camp: tent, campfire, bedroll, a stump with an axe, supply sacks and a crate.
   buildCamp(world);
 
-  // 6. Open up pockets the trees sealed off, so every glade can be reached on foot; fill the rest.
+  // 6. Day-one supplies: a few sticks, pebbles and grass a short walk from camp.
+  scatterStarterSupplies(world, rand);
+
+  // 7. Open up pockets the trees sealed off, so every glade can be reached on foot; fill the rest.
   openSealedPockets(world);
 
   return world;
+}
+
+function scatterStarterSupplies(world: World, rand: () => number) {
+  const want: Array<[Prop, number]> = [
+    [Prop.Sticks, 7],
+    [Prop.Pebbles, 6],
+    [Prop.TallGrass, 6],
+  ];
+  for (const [prop, count] of want) {
+    let placed = 0;
+    for (let attempt = 0; attempt < 400 && placed < count; attempt++) {
+      const a = rand() * Math.PI * 2;
+      const r = 5 + rand() * 9;
+      const x = Math.round(world.campX + Math.cos(a) * r);
+      const y = Math.round(world.campY + Math.sin(a) * r);
+      const i = idx(world, x, y);
+      if (world.ground[i] !== Ground.Grass || world.prop[i] !== Prop.None) continue;
+      world.prop[i] = prop;
+      placed++;
+    }
+  }
+}
+
+/** Glowing mushrooms only grow in the Deepwild; they're a rare material, not food. */
+export function isGlowcap(world: World, i: number) {
+  return world.prop[i] === Prop.Mushroom && world.zone[i] === 3 && world.variant[i] % 3 !== 0;
 }
 
 /**

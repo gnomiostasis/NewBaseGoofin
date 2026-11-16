@@ -302,6 +302,150 @@ function tallGrass(g: Ctx, seed: number) {
   }
 }
 
+function sticksOnGround(g: Ctx, seed: number) {
+  const stick = (x: number, y: number, len: number, dir: number) => {
+    for (let i = 0; i < len; i++) {
+      const yy = y + Math.round(i * dir * 0.5);
+      px(g, x + i, yy + 1, OUTLINE);
+      px(g, x + i, yy, i % 3 === 0 ? WOOD[2] : WOOD[0]);
+    }
+  };
+  stick(3, 9 + (seed % 2), 9, 0.4);
+  stick(5, 12, 8, -0.5);
+  px(g, 8, 10, GRASS[3]);
+}
+
+function pebbles(g: Ctx) {
+  const p = (x: number, y: number, w: number) => {
+    rect(g, x, y + 1, w, 2, STONE[3]);
+    rect(g, x, y, w, 2, STONE[0]);
+    px(g, x, y, STONE[2]);
+  };
+  p(4, 9, 3);
+  p(9, 11, 3);
+  p(7, 6, 2);
+}
+
+function choppedStump(g: Ctx) {
+  shadow(g, 8, 14, 6, 1.5, 0.25);
+  rect(g, 3, 9, 10, 5, OUTLINE);
+  rect(g, 4, 10, 8, 4, WOOD[1]);
+  rect(g, 4, 10, 2, 4, WOOD[0]);
+  rect(g, 3, 6, 10, 4, OUTLINE);
+  rect(g, 4, 7, 8, 2, '#d9b07a');
+  px(g, 7, 7, '#a77b4b');
+  px(g, 8, 8, '#a77b4b');
+}
+
+function bareBush(g: Ctx) {
+  shadow(g, 8, 14, 7, 1.5, 0.25);
+  blob(
+    g,
+    [
+      [5, 10, 4.6],
+      [11, 10, 4.6],
+      [8, 7, 4.8],
+    ],
+    LEAVES.woods[1],
+    { seed: 9 },
+  );
+}
+
+// --- item icons -----------------------------------------------------------
+
+function iconAxe(g: Ctx) {
+  for (let i = 0; i < 10; i++) {
+    px(g, 3 + i, 13 - i, OUTLINE);
+    px(g, 4 + i, 13 - i, WOOD[0]);
+  }
+  rect(g, 8, 1, 6, 6, OUTLINE);
+  rect(g, 9, 2, 4, 4, STONE[0]);
+  rect(g, 9, 2, 4, 1, STONE[2]);
+  rect(g, 12, 3, 1, 3, STONE[1]);
+  rect(g, 9, 5, 2, 1, '#7a6a52');
+}
+
+function iconPick(g: Ctx) {
+  for (let i = 0; i < 10; i++) {
+    px(g, 7, 4 + i, OUTLINE);
+    px(g, 8, 4 + i, WOOD[0]);
+  }
+  rect(g, 2, 2, 12, 3, OUTLINE);
+  rect(g, 3, 3, 10, 1, STONE[0]);
+  rect(g, 1, 4, 2, 2, STONE[1]);
+  rect(g, 13, 4, 2, 2, STONE[1]);
+  rect(g, 7, 2, 3, 3, '#7a6a52');
+}
+
+function iconWood(g: Ctx) {
+  rect(g, 1, 4, 12, 5, OUTLINE);
+  rect(g, 2, 5, 10, 3, WOOD[0]);
+  rect(g, 2, 5, 10, 1, WOOD[2]);
+  rect(g, 1, 4, 4, 5, OUTLINE);
+  rect(g, 2, 5, 2, 3, '#d9b07a');
+  rect(g, 3, 9, 12, 5, OUTLINE);
+  rect(g, 4, 10, 10, 3, WOOD[1]);
+  rect(g, 3, 9, 4, 5, OUTLINE);
+  rect(g, 4, 10, 2, 3, '#d9b07a');
+}
+
+function iconStone(g: Ctx) {
+  blob(g, [[8, 9, 5], [6, 8, 4]], STONE, { seed: 4 });
+}
+
+function iconOre(g: Ctx) {
+  blob(g, [[8, 9, 5], [6, 8, 4]], STONE, { seed: 5 });
+  px(g, 6, 7, ORE[0]);
+  px(g, 7, 7, ORE[1]);
+  px(g, 9, 10, ORE[0]);
+  px(g, 10, 10, ORE[1]);
+  px(g, 5, 10, ORE[0]);
+}
+
+function iconFiber(g: Ctx) {
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 11; j++) px(g, 3 + i * 2 + (j > 8 ? 1 : 0), 2 + j, i % 2 ? GRASS[0] : GRASS[2]);
+  rect(g, 3, 7, 10, 2, '#a8873f');
+}
+
+function iconBerries(g: Ctx) {
+  const b = (x: number, y: number) => {
+    rect(g, x, y, 3, 3, BERRY);
+    px(g, x, y, '#f5a0a6');
+    px(g, x + 2, y + 2, '#b8333e');
+  };
+  b(4, 7);
+  b(8, 8);
+  b(6, 10);
+  rect(g, 6, 3, 4, 2, LEAVES.meadow[0][0]);
+  px(g, 7, 5, LEAVES.meadow[0][3]);
+}
+
+function iconMushroom(g: Ctx, glowy: boolean) {
+  const cap = glowy ? GLOW_SHROOM[0] : '#cf4a3c';
+  const capD = glowy ? GLOW_SHROOM[1] : '#9a3226';
+  rect(g, 6, 8, 4, 6, '#efe3cf');
+  rect(g, 2, 4, 12, 4, OUTLINE);
+  rect(g, 3, 3, 10, 4, cap);
+  rect(g, 3, 6, 10, 1, capD);
+  rect(g, 5, 2, 6, 1, cap);
+  px(g, 5, 4, '#ffffff');
+  px(g, 9, 3, '#ffffff');
+}
+
+function targetCorners(g: Ctx) {
+  // 18 x 18 bracket drawn around the tile you're about to use.
+  const c = '#fff6dc';
+  const L = 4;
+  rect(g, 0, 0, L, 1, c);
+  rect(g, 0, 0, 1, L, c);
+  rect(g, 18 - L, 0, L, 1, c);
+  rect(g, 17, 0, 1, L, c);
+  rect(g, 0, 17, L, 1, c);
+  rect(g, 0, 18 - L, 1, L, c);
+  rect(g, 18 - L, 17, L, 1, c);
+  rect(g, 17, 18 - L, 1, L, c);
+}
+
 // --- camp ---------------------------------------------------------------
 
 function tent(g: Ctx) {
@@ -545,6 +689,22 @@ export function buildTextures(scene: Phaser.Scene) {
   atlas.add('lantern', 8, 16, lantern);
   for (let f = 0; f < 4; f++) atlas.add(`campfire_${f}`, 16, 16, (g) => campfire(g, f));
   for (const dir of PLAYER_DIRS) for (let s = 0; s < 4; s++) atlas.add(`player_${dir}_${s}`, 16, 16, (g) => playerFrame(g, dir, s));
+  atlas.add('sticks_0', 16, 16, (g) => sticksOnGround(g, 0));
+  atlas.add('sticks_1', 16, 16, (g) => sticksOnGround(g, 1));
+  atlas.add('pebbles', 16, 16, pebbles);
+  atlas.add('stump_cut', 16, 16, choppedStump);
+  atlas.add('bare_bush', 16, 16, bareBush);
+  atlas.add('item_stone_axe', 16, 16, iconAxe);
+  atlas.add('item_stone_pick', 16, 16, iconPick);
+  atlas.add('item_wood', 16, 16, iconWood);
+  atlas.add('item_stone', 16, 16, iconStone);
+  atlas.add('item_copper_ore', 16, 16, iconOre);
+  atlas.add('item_fiber', 16, 16, iconFiber);
+  atlas.add('item_berries', 16, 16, iconBerries);
+  atlas.add('item_mushroom', 16, 16, (g) => iconMushroom(g, false));
+  atlas.add('item_glowcap', 16, 16, (g) => iconMushroom(g, true));
+  atlas.add('item_stick', 16, 16, (g) => sticksOnGround(g, 0));
+  atlas.add('target', 18, 18, targetCorners);
   atlas.add('eyes', 4, 1, eyes);
   atlas.add('glow', 96, 96, (g) => glow(g, 96));
 

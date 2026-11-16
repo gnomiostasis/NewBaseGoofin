@@ -37,3 +37,27 @@ export const PLAYER = {
 /** Tint applied at the farthest point of the map; the wilds dim and cool toward it. */
 export const FAR_TINT = 0x4f5d86;
 export const MAX_DARKNESS = 0.78;
+
+/** Survival bars. Hunger is gentle on purpose: about six minutes from full to empty. */
+export const SURVIVAL = {
+  maxHealth: 100,
+  maxHunger: 100,
+  maxStamina: 100,
+  hungerPerSecond: 100 / 360,
+  sprintHungerFactor: 1.6,
+  hungryBelow: 25,
+  starveDamagePerSecond: 1.2,
+  sprintStaminaPerSecond: 16,
+  staminaRegen: 9,
+  campStaminaRegen: 30,
+  campHealPerSecond: 2,
+  /** Tiles from the campfire that count as being at camp. */
+  campRadius: 5,
+};
+
+export const PACK = {
+  /** Total weight you can carry. Strength will raise this in milestone 4. */
+  capacity: 40,
+};
+
+export const SPRINT_MULTIPLIER = 1.55;
