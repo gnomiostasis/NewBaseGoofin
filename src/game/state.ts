@@ -12,7 +12,7 @@ export interface GameEvents {
   toast: (text: string) => void;
   /** Floating "+3 Wood" text at a world position. */
   gained: (wx: number, wy: number, items: Array<[ItemId, number]>) => void;
-  /** What pressing E would do right now, or null. */
+  /** What clicking would do right now, or null. */
   prompt: (text: string | null, blocked: boolean) => void;
   levelup: (level: number) => void;
 }
@@ -35,7 +35,7 @@ export class GameState {
   /** Where you wake after collapsing: the last bed you slept in, else camp. */
   respawn: [number, number] | null = null;
   readonly progress = new Progress();
-  /** Packs dropped where you collapsed; walk back and press E to pick them up. */
+  /** Packs dropped where you collapsed; walk back and click them to pick them up. */
   lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }> = [];
   /** Lumber mills by tile index. */
   readonly mills = new Map<number, MillState>();
