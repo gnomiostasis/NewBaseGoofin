@@ -7,6 +7,24 @@ and later automate the basic materials so your trips can go after the rare ones.
 All art is original 16x16 pixel art, painted in code from one warm, earthy palette.
 The farther you walk from camp, the darker and colder the wilds get.
 
+## Play it online
+
+Once GitHub Pages is switched on (Settings > Pages > Source: **GitHub Actions**), every push to
+`main` publishes the game at **https://gnomiostasis.github.io/NewBaseGoofin/**.
+
+The game saves itself in your browser every 20 seconds, whenever you sleep, and when you close the
+tab. Pick **Continue** on the title screen to carry on. Lumber mills keep sawing while the game is
+closed, for up to 4 hours.
+
+## Put it on itch.io
+
+1. Run `npm run build`, or download the `newbasegoofin-web` artifact from the latest
+   "Deploy to GitHub Pages" run on GitHub.
+2. Zip the *contents* of `dist/` so `index.html` sits at the top of the zip.
+3. On itch.io, create a new project, set **Kind of project** to **HTML**, upload the zip and tick
+   **This file will be played in the browser**. A 1280 x 720 viewport with the fullscreen button
+   works well.
+
 ## Play it locally
 
 You need [Node.js](https://nodejs.org/) 20 or newer.
@@ -30,6 +48,8 @@ Controls:
 | L | Stats: 1-4 spends a point on Strength, Endurance, Agility or Gathering |
 | Esc | Close any panel or build mode |
 | M | Show or hide the map |
+
+Trees you chop grow back after about 8 minutes, and picked berry bushes after 2 and a half.
 
 Your first job: pick up sticks and stones and pull some grass near camp, then craft a stone axe.
 
@@ -64,7 +84,7 @@ faster sawing, up to 6. It stops when storage holds 150 wood. Press E at a mill 
 | `src/world/shade.ts` | How dark and cool the world gets with distance from camp |
 | `src/art/` | The palette and the code that paints every tile and sprite |
 | `src/game/` | Items, the pack and stash, gathering, survival, building, creatures, stats, the lumber mill and sound effects. No Phaser rendering, so it's testable |
-| `src/scenes/` | Phaser scenes: boot (makes textures), world (map, player, camera), HUD |
+| `src/scenes/` | Phaser scenes: boot (makes textures), title, world (map, player, camera, saving), creatures, HUD |
 | `tests/` | Vitest tests for world generation and the survival rules |
 
 ## Roadmap
@@ -74,4 +94,4 @@ faster sawing, up to 6. It stops when storage holds 150 wood. Press E at a mill 
 3. **Build the base** (done): grid placement, walls, floors, chests, a bed and a workbench.
 4. **Danger and leveling** (done): creatures in the outer zones, melee combat, XP and four stats.
 5. **First automation** (done): a lumber mill that fills a chest with wood over time.
-6. **Save, balance, share**: save and load, a title screen, tuning, a public link.
+6. **Save, balance, share** (done): save and load, a title screen, tuning, a public link.

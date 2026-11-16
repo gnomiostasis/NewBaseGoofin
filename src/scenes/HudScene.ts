@@ -157,7 +157,9 @@ export class HudScene extends Phaser.Scene {
       this.gs.events.removeAllListeners();
     });
     this.layout();
-    this.time.delayedCall(1200, () => this.toast('Gather sticks, stones and grass, then press C to craft a stone axe.'));
+    if (this.registry.get('newGame') !== false)
+      this.time.delayedCall(1200, () => this.toast('Gather sticks, stones and grass, then press C to craft a stone axe.'));
+    else this.time.delayedCall(600, () => this.toast('Welcome back.'));
   }
 
   private text(x: number, y: number, s: string, size: number, color: string) {

@@ -4,6 +4,7 @@ import { CreatureSystem } from './CreatureSystem';
 import { COMBAT, playerDamage } from '../game/creatures';
 import { LEVELING } from '../game/stats';
 import { describeMill, millStatus, tickMill } from '../game/mill';
+import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
   Ground,
@@ -110,10 +111,24 @@ export class WorldScene extends Phaser.Scene {
     this.game_ = GameState.get(this);
     this.sfx = this.game_.sfx;
     this.world = generateWorld();
+    this.baseProps = this.world.prop.slice();
+    const save = (this.registry.get('pendingSave') as SaveData | null) ?? null;
+    this.registry.set('pendingSave', null);
+    if (save) applyWorldChanges(this.world, save);
     this.buildTilemap();
     this.createAnimations();
     this.buildCamp();
     this.createPlayer();
+    if (save) this.restore(save);
+    this.time.addEvent({ delay: AUTOSAVE_MS, loop: true, callback: () => this.save() });
+    const onHide = () => document.visibilityState === 'hidden' && this.save();
+    const onUnload = () => this.save();
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onUnload);
+    this.events.once('shutdown', () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onUnload);
+    });
     this.creatures = new CreatureSystem(this);
     this.setupCamera();
     this.targetMarker = this.add.image(0, 0, 'atlas', 'target').setDepth(200000).setVisible(false);
@@ -158,6 +173,54 @@ export class WorldScene extends Phaser.Scene {
 
   private queuedAct = false;
   private queuedEat = false;
+  /** Props as the map was generated, so a save only stores what changed. */
+  private baseProps!: Uint8Array;
+
+  // ------------------------------------------------------------ saving
+
+  /** Writes the run to browser storage. Skipped mid-collapse, when things are in flux. */
+  save(): boolean {
+    if (!this.player || this.busy) return false;
+    const w = this.world;
+    const now = this.time.now;
+    return writeSave({
+      v: 1,
+      savedAt: Date.now(),
+      seed: w.seed,
+      player: { x: Math.round(this.player.x), y: Math.round(this.player.y) },
+      ...worldChanges(w, this.baseProps),
+      ...captureState(this.game_),
+      regrow: this.regrow.map((g) => [g.i, Math.max(0, g.at - now), g.prop]),
+    });
+  }
+
+  private restore(d: SaveData) {
+    const st = this.game_;
+    const w = this.world;
+    restoreState(st, d);
+    st.pack.baseCapacity = PACK.capacity + st.mods.carryBonus;
+    this.player.setPosition(d.player.x, d.player.y);
+    for (let i = 0; i < w.build.length; i++) {
+      if (!w.build[i] && !w.floor[i]) continue;
+      if (w.build[i] === Build.Chest) this.chests.add(i);
+      if (w.build[i] === Build.Door) this.doors.add(i);
+      const x = i % w.width;
+      this.renderBuild(x, (i - x) / w.width);
+    }
+    for (const [i, msLeft, prop] of d.regrow) this.regrow.push({ i, at: this.time.now + msLeft, prop: prop as Prop });
+    this.renderLostPacks();
+    // The mills kept sawing while you were away.
+    const away = Math.min(OFFLINE_CAP_MS, Math.max(0, Date.now() - d.savedAt));
+    let made = 0;
+    for (const [i, m] of st.mills) {
+      const x = i % w.width;
+      const y = (i - x) / w.width;
+      const n = tickMill(m, millStatus(w, x, y, st.stash.count('wood')), away, st.stash.count('wood'));
+      st.stash.add('wood', n);
+      made += n;
+    }
+    if (made > 0) this.time.delayedCall(1500, () => st.emit('toast', `While you were away, your mills made ${made} wood.`));
+  }
   private buildObjects = new Map<number, Phaser.GameObjects.Image[]>();
   private ghost!: Phaser.GameObjects.Image;
   private chests = new Set<number>();
@@ -630,6 +693,7 @@ export class WorldScene extends Phaser.Scene {
       st.emit('toast', inBed ? 'You sleep in your own bed. Energy restored, and you will wake here.' : 'You rest by the fire. Energy restored.');
       cam.fadeIn(450, 16, 24, 35);
       this.busy = false;
+      this.save();
     });
   }
 
@@ -1063,14 +1127,21 @@ export class WorldScene extends Phaser.Scene {
     this.queuedAct = false;
     this.queuedEat = false;
 
-    // Bushes grow back.
+    // Bushes and trees grow back.
     for (let r = this.regrow.length - 1; r >= 0; r--) {
       const g = this.regrow[r];
       if (time < g.at) continue;
       this.regrow.splice(r, 1);
       const gx = g.i % w.width;
       const gy = (g.i - gx) / w.width;
-      if (w.prop[g.i] === Prop.BareBush) this.setProp(gx, gy, g.prop);
+      // Only if what was left is still there (a stump you built over is gone for good),
+      // and never on top of you.
+      if (w.prop[g.i] !== GATHER[g.prop]?.leaves) continue;
+      if (this.playerTiles().some(([px, py]) => px === gx && py === gy)) {
+        this.regrow.push({ ...g, at: time + 5000 });
+        continue;
+      }
+      this.setProp(gx, gy, g.prop);
     }
 
     st.nearStorage = st.atCamp || this.nearChest(tx, ty);
