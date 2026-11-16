@@ -40,7 +40,7 @@ Controls:
 | --- | --- |
 | WASD / arrows | Walk |
 | Shift | Run (uses energy) |
-| E | Gather what's in front of you; hold to keep chopping or mining. At camp: store materials in the crate, rest on the bedroll |
+| Left click | Use what you click on next to you, or what's in front of you: gather it (hold to keep chopping or mining), store materials in a chest or the camp crate, rest, sleep, open the workbench |
 | Space or J | Swing at a creature in front of you (uses energy; an axe hits harder) |
 | F | Eat (mushrooms first, then berries) |
 | C | Hand-crafting (then 1 or 2 to craft) |
@@ -59,12 +59,12 @@ collapse. A workbench crafts copper tools (twice as fast) and a woven basket (+2
 
 Bramblehogs root around the Old Woods and Duskprowlers hunt in pairs in the Deepwild. Neither
 will follow you into the meadow. If you collapse, your materials stay behind in a dropped pack
-where you fell; walk back and press E to pick it up. Everything you do earns XP, and each level
+where you fell; walk back and click it to pick it up. Everything you do earns XP, and each level
 (up to 10) gives a point to spend on a stat, so a zone that beat you once gets easier.
 
 A lumber mill (wood, stone and a little copper ore) saws wood from the standing trees within
 3 tiles and drops it into a chest within 3 tiles, even while you're far away. More trees means
-faster sawing, up to 6. It stops when storage holds 150 wood. Press E at a mill to see how it's doing.
+faster sawing, up to 6. It stops when storage holds 150 wood. Click a mill to see how it's doing.
 
 ## Other commands
 

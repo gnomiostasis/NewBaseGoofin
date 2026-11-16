@@ -52,6 +52,9 @@ export interface PlayerState {
 }
 
 type Dir = 'down' | 'up' | 'left' | 'right';
+/** How far from your middle a clicked object can be, in pixels: the tiles right around you. */
+const HOVER_REACH = 26;
+
 const DIR_STEP: Record<Dir, [number, number]> = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
 
 /** Glowing eyes that watch from the Deepwild and blink out when you get close. */
@@ -73,7 +76,7 @@ export class WorldScene extends Phaser.Scene {
   player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
   game_!: GameState;
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd' | 'shift' | 'e' | 'space',
+    'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd' | 'shift' | 'space',
     Phaser.Input.Keyboard.Key
   >;
   private facing: Dir = 'down';
@@ -145,12 +148,10 @@ export class WorldScene extends Phaser.Scene {
       s: K.S,
       d: K.D,
       shift: K.SHIFT,
-      e: K.E,
       space: K.SPACE,
     }) as WorldScene['keys'];
 
     // Queue taps from key events too, so a very quick press is never lost between frames.
-    this.input.keyboard!.on('keydown-E', () => (this.queuedAct = true));
     this.input.keyboard!.on('keydown-SPACE', () => (this.queuedAttack = true));
     this.input.keyboard!.on('keydown-J', () => (this.queuedAttack = true));
     this.input.keyboard!.on('keydown-F', () => (this.queuedEat = true));
@@ -162,7 +163,12 @@ export class WorldScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu();
     this.ghost = this.add.image(0, 0, 'atlas', 'floor').setOrigin(0.5, 1).setAlpha(0.65).setDepth(200002).setVisible(false);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (!this.game_.buildMode || this.busy) return;
+      if (this.busy) return;
+      if (!this.game_.buildMode) {
+        // Left click uses whatever is under the mouse, or what's in front of you.
+        if (p.leftButtonDown()) this.queuedAct = true;
+        return;
+      }
       if (p.rightButtonDown()) this.removeAtPointer();
       else this.placeAtPointer();
     });
@@ -507,7 +513,6 @@ export class WorldScene extends Phaser.Scene {
 
   /** Finds what's in front of you: the tile you face, then the one you stand on. */
   private findTarget(): Target | null {
-    const w = this.world;
     const [dx, dy] = DIR_STEP[this.facing];
     const fx = this.player.x;
     const fy = this.player.body.center.y;
@@ -518,21 +523,48 @@ export class WorldScene extends Phaser.Scene {
       ([x, y], k, all) => all.findIndex(([x2, y2]) => x2 === x && y2 === y) === k,
     );
     for (const [tx, ty] of candidates) {
-      if (!inBounds(w, tx, ty)) continue;
-      const i = idx(w, tx, ty);
-      const lost = this.game_.lostPacks.findIndex((l) => l.tx === tx && l.ty === ty);
-      if (lost >= 0) return { kind: 'lostpack', tx, ty, k: lost };
-      const b = w.build[i];
-      if (b === Build.Chest || b === Build.Bed || b === Build.Workbench || b === Build.Mill) return { kind: 'build', tx, ty, what: KIND_OF[b] };
-      const camp = this.campAt.get(i);
-      if (camp && (camp === 'crate' || camp === 'bedroll' || camp === 'tent' || camp === 'sack')) {
-        return { kind: 'camp', tx, ty, what: camp };
-      }
-      const p = w.prop[i] as Prop;
-      if (p === Prop.BareBush) return { kind: 'regrowing', tx, ty };
-      const rule = isGlowcap(w, i) ? GLOWCAP_RULE : GATHER[p];
-      if (rule) return { kind: 'prop', i, tx, ty, rule, prop: p };
+      const t = this.targetAt(tx, ty);
+      if (t) return t;
     }
+    return null;
+  }
+
+  /** What's on the tile under the mouse, if it's close enough to reach. */
+  private hoverTarget(): Target | null {
+    if (this.game_.buildMode) return null;
+    const p = this.input.activePointer;
+    // Ignore a mouse that has never been over the game.
+    if (p.x === 0 && p.y === 0 && !p.isDown) return null;
+    const [tx, ty] = this.pointerTile();
+    const d = Math.hypot(tx * TILE + 8 - this.player.x, ty * TILE + 8 - this.player.body.center.y);
+    if (d > HOVER_REACH) return null;
+    return this.targetAt(tx, ty);
+  }
+
+  /** Turns the player to look at a tile. */
+  private faceTile(tx: number, ty: number) {
+    const dx = tx * TILE + 8 - this.player.x;
+    const dy = ty * TILE + 8 - this.player.body.center.y;
+    if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+    this.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down';
+  }
+
+  private targetAt(tx: number, ty: number): Target | null {
+    const w = this.world;
+    if (!inBounds(w, tx, ty)) return null;
+    const i = idx(w, tx, ty);
+    const lost = this.game_.lostPacks.findIndex((l) => l.tx === tx && l.ty === ty);
+    if (lost >= 0) return { kind: 'lostpack', tx, ty, k: lost };
+    const b = w.build[i];
+    if (b === Build.Chest || b === Build.Bed || b === Build.Workbench || b === Build.Mill) return { kind: 'build', tx, ty, what: KIND_OF[b] };
+    const camp = this.campAt.get(i);
+    if (camp && (camp === 'crate' || camp === 'bedroll' || camp === 'tent' || camp === 'sack')) {
+      return { kind: 'camp', tx, ty, what: camp };
+    }
+    const p = w.prop[i] as Prop;
+    if (p === Prop.BareBush) return { kind: 'regrowing', tx, ty };
+    const rule = isGlowcap(w, i) ? GLOWCAP_RULE : GATHER[p];
+    if (rule) return { kind: 'prop', i, tx, ty, rule, prop: p };
     return null;
   }
 
@@ -1111,7 +1143,8 @@ export class WorldScene extends Phaser.Scene {
     }
 
     // Targeting and actions.
-    this.target = this.busy ? null : this.findTarget();
+    const hovered = this.busy ? null : this.hoverTarget();
+    this.target = this.busy ? null : hovered ?? this.findTarget();
     if (this.target) {
       this.targetMarker.setPosition(this.target.tx * TILE + 8, this.target.ty * TILE + 8).setVisible(true);
       const [text, blocked] = this.describe(this.target);
@@ -1122,7 +1155,12 @@ export class WorldScene extends Phaser.Scene {
       if (this.lastPrompt !== '') st.emit('prompt', null, false);
       this.lastPrompt = '';
     }
-    if (!this.busy && (this.queuedAct || k.e.isDown)) this.act(time);
+    const holding = this.input.activePointer.leftButtonDown() && !st.buildMode;
+    // Holding the button keeps chopping or mining; everything else takes a fresh click.
+    if (!this.busy && (this.queuedAct || (holding && this.target?.kind === 'prop'))) {
+      if (hovered) this.faceTile(hovered.tx, hovered.ty);
+      this.act(time);
+    }
     if (!this.busy && this.queuedEat) this.eatSomething();
     this.queuedAct = false;
     this.queuedEat = false;

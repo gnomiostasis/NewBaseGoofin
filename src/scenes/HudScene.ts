@@ -19,7 +19,7 @@ const ZONE_BLURBS: Record<number, string> = {
   3: 'Cold and dark. Something watches from between the pines.',
 };
 
-const HINT = '[WASD] walk   [Shift] run   [E] use   [Space] attack   [F] eat   [C] craft   [B] build   [L] stats   [M] map';
+const HINT = '[WASD] walk   [Shift] run   [Click] use   [Space] attack   [F] eat   [C] craft   [B] build   [L] stats   [M] map';
 
 /** Screen-space overlay: vitals, compass, pack, prompts, crafting, stash, minimap, banners. */
 export class HudScene extends Phaser.Scene {
@@ -148,7 +148,7 @@ export class HudScene extends Phaser.Scene {
     this.gs.on('gained', (wx, wy, items) => this.floatGain(wx, wy, items));
     this.gs.on('prompt', (t, blocked) => {
       this.prompt.setVisible(t !== null);
-      if (t) this.prompt.setText(`[E]  ${t}`).setColor(blocked ? '#f0b8a0' : UI.cream);
+      if (t) this.prompt.setText(`[Click]  ${t}`).setColor(blocked ? '#f0b8a0' : UI.cream);
     });
 
     this.scale.on('resize', this.layout, this);
