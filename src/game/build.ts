@@ -10,9 +10,10 @@ export enum Build {
   Chest = 3,
   Bed = 4,
   Workbench = 5,
+  Mill = 6,
 }
 
-export type BuildKind = 'floor' | 'wall' | 'door' | 'chest' | 'bed' | 'workbench';
+export type BuildKind = 'floor' | 'wall' | 'door' | 'chest' | 'bed' | 'workbench' | 'mill';
 
 export interface BuildDef {
   kind: BuildKind;
@@ -22,7 +23,7 @@ export interface BuildDef {
   blurb: string;
 }
 
-/** In build-bar order: keys 1-6 pick them. */
+/** In build-bar order: keys 1-7 pick them. */
 export const BUILDABLES: BuildDef[] = [
   { kind: 'floor', name: 'Floor', cost: { wood: 1 }, blurb: 'Plank floor to walk on' },
   { kind: 'wall', name: 'Wall', cost: { wood: 2 }, blurb: 'Keeps things out' },
@@ -30,6 +31,7 @@ export const BUILDABLES: BuildDef[] = [
   { kind: 'chest', name: 'Chest', cost: { wood: 4, stone: 1 }, blurb: 'Storage, shared with the camp stash' },
   { kind: 'bed', name: 'Bed', cost: { wood: 4, fiber: 4 }, blurb: 'Rest here; you wake here if you collapse' },
   { kind: 'workbench', name: 'Workbench', cost: { wood: 5, stone: 3 }, blurb: 'Crafts copper tools and a bigger pack' },
+  { kind: 'mill', name: 'Mill', cost: { wood: 10, stone: 6, copper_ore: 2 }, blurb: 'Saws wood from nearby trees into a chest' },
 ];
 
 export const BUILD_ID: Record<Exclude<BuildKind, 'floor'>, Build> = {
@@ -38,6 +40,7 @@ export const BUILD_ID: Record<Exclude<BuildKind, 'floor'>, Build> = {
   chest: Build.Chest,
   bed: Build.Bed,
   workbench: Build.Workbench,
+  mill: Build.Mill,
 };
 
 export const KIND_OF: Record<number, BuildKind> = {
@@ -46,6 +49,7 @@ export const KIND_OF: Record<number, BuildKind> = {
   [Build.Chest]: 'chest',
   [Build.Bed]: 'bed',
   [Build.Workbench]: 'workbench',
+  [Build.Mill]: 'mill',
 };
 
 /** Ground cover that building simply clears away. */

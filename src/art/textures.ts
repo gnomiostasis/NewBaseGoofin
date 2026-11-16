@@ -553,6 +553,43 @@ function workbench(g: Ctx) {
   rect(g, 10, 5, 3, 1, STONE[1]);
 }
 
+function lumberMill(g: Ctx, frame: number) {
+  // 16 x 28: a plank shed with a shingled roof and a saw blade out front.
+  shadow(g, 8, 26, 8, 1.6, 0.28);
+  // Roof.
+  for (let y = 0; y < 10; y++) {
+    const half = Math.min(8, 2 + y);
+    rect(g, 8 - half, 2 + y, half * 2, 1, OUTLINE);
+    if (y > 0) rect(g, 9 - half, 2 + y, half * 2 - 2, 1, y % 3 === 0 ? '#7a3f2c' : '#9a5236');
+  }
+  rect(g, 7, 2, 2, 1, '#c06a45');
+  // Walls.
+  rect(g, 1, 12, 14, 14, OUTLINE);
+  rect(g, 2, 12, 12, 13, PLANK[0]);
+  for (let x = 4; x < 14; x += 3) rect(g, x, 12, 1, 13, PLANK[1]);
+  rect(g, 2, 12, 12, 1, PLANK[3]);
+  // Doorway with stacked planks inside.
+  rect(g, 10, 18, 4, 7, PLANK[3]);
+  rect(g, 10, 22, 4, 1, PLANK[2]);
+  rect(g, 10, 24, 4, 1, PLANK[2]);
+  // Saw blade on its housing.
+  rect(g, 2, 23, 7, 2, WOOD[1]);
+  const cx = 5.5;
+  const cy = 19.5;
+  for (let y = 15; y < 24; y++) {
+    for (let x = 1; x < 10; x++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+      if (d < 3.2) px(g, x, y, d < 1.2 ? STONE[3] : STONE[2]);
+      else if (d < 4.2) {
+        const a = Math.atan2(y + 0.5 - cy, x + 0.5 - cx) + (frame * Math.PI) / 16;
+        const tooth = ((a / (Math.PI / 4)) % 1 + 1) % 1 < 0.5;
+        px(g, x, y, tooth ? STONE[1] : OUTLINE);
+      }
+    }
+  }
+  px(g, 5, 19, OUTLINE);
+}
+
 function iconCopperAxe(g: Ctx) {
   for (let i = 0; i < 10; i++) {
     px(g, 3 + i, 13 - i, OUTLINE);
@@ -921,6 +958,8 @@ export function buildTextures(scene: Phaser.Scene) {
   atlas.add('chest', 16, 16, chest);
   atlas.add('bed', 16, 24, bed);
   atlas.add('workbench', 16, 20, workbench);
+  atlas.add('mill', 16, 28, (g) => lumberMill(g, 0));
+  for (let f = 1; f < 4; f++) atlas.add(`mill_${f}`, 16, 28, (g) => lumberMill(g, f));
   atlas.add('item_copper_axe', 16, 16, iconCopperAxe);
   atlas.add('item_copper_pick', 16, 16, iconCopperPick);
   atlas.add('item_woven_basket', 16, 16, iconBasket);

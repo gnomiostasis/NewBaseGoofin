@@ -3,6 +3,7 @@ import { PACK, PLAYER, SPRINT_MULTIPLIER, SURVIVAL, TILE } from '../config';
 import { CreatureSystem } from './CreatureSystem';
 import { COMBAT, playerDamage } from '../game/creatures';
 import { LEVELING } from '../game/stats';
+import { describeMill, millStatus, tickMill } from '../game/mill';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
   Ground,
@@ -459,7 +460,7 @@ export class WorldScene extends Phaser.Scene {
       const lost = this.game_.lostPacks.findIndex((l) => l.tx === tx && l.ty === ty);
       if (lost >= 0) return { kind: 'lostpack', tx, ty, k: lost };
       const b = w.build[i];
-      if (b === Build.Chest || b === Build.Bed || b === Build.Workbench) return { kind: 'build', tx, ty, what: KIND_OF[b] };
+      if (b === Build.Chest || b === Build.Bed || b === Build.Workbench || b === Build.Mill) return { kind: 'build', tx, ty, what: KIND_OF[b] };
       const camp = this.campAt.get(i);
       if (camp && (camp === 'crate' || camp === 'bedroll' || camp === 'tent' || camp === 'sack')) {
         return { kind: 'camp', tx, ty, what: camp };
@@ -479,6 +480,7 @@ export class WorldScene extends Phaser.Scene {
     if (t.kind === 'build') {
       if (t.what === 'chest') return ['Store materials in chest', false];
       if (t.what === 'bed') return ['Sleep (you will wake here)', false];
+      if (t.what === 'mill') return [this.millText(t.tx, t.ty), false];
       return ['Use workbench', false];
     }
     if (t.kind === 'camp') {
@@ -503,6 +505,7 @@ export class WorldScene extends Phaser.Scene {
     if (t.kind === 'build') {
       this.nextSwing = time + 400;
       if (t.what === 'chest') this.storeMaterials();
+      else if (t.what === 'mill') st.emit('toast', this.millText(t.tx, t.ty));
       else if (t.what === 'bed') {
         st.respawn = [t.tx, t.ty];
         this.rest(true);
@@ -821,6 +824,7 @@ export class WorldScene extends Phaser.Scene {
     else w.build[i] = BUILD_ID[def.kind];
     if (def.kind === 'chest') this.chests.add(i);
     if (def.kind === 'door') this.doors.add(i);
+    if (def.kind === 'mill') st.mills.set(i, { work: 0, made: 0 });
     if (isBlocked(w, x, y)) this.collideLayer.putTileAt(T_BLOCK, x, y);
     this.renderBuild(x, y);
     this.refreshAround(x, y);
@@ -844,6 +848,7 @@ export class WorldScene extends Phaser.Scene {
       w.build[i] = Build.None;
       this.chests.delete(i);
       this.doors.delete(i);
+      st.mills.delete(i);
     } else if (w.floor[i]) {
       kind = 'floor';
       w.floor[i] = 0;
@@ -893,6 +898,33 @@ export class WorldScene extends Phaser.Scene {
       if (!img) continue;
       const open = tiles.includes(i) || tiles.includes(i + w.width) || tiles.includes(i - w.width);
       img.setFrame(open ? 'door_open' : 'door');
+    }
+  }
+
+  private millText(x: number, y: number): string {
+    const st = this.game_;
+    const m = st.mills.get(idx(this.world, x, y));
+    return describeMill(millStatus(this.world, x, y, st.stash.count('wood')), m?.made ?? 0);
+  }
+
+  /** Mills keep sawing wherever you are; the saw spins while one is working. */
+  private updateMills(time: number, delta: number) {
+    const st = this.game_;
+    const w = this.world;
+    const view = this.cameras.main.worldView;
+    for (const [i, m] of st.mills) {
+      const x = i % w.width;
+      const y = (i - x) / w.width;
+      const status = millStatus(w, x, y, st.stash.count('wood'));
+      const made = tickMill(m, status, delta, st.stash.count('wood'));
+      if (made > 0 && status.ok) {
+        st.stash.add('wood', made);
+        const cx = (status.chest % w.width) * TILE + 8;
+        const cy = Math.floor(status.chest / w.width) * TILE;
+        if (view.contains(cx, cy)) st.emit('gained', cx, cy, [['wood', made]]);
+      }
+      const img = this.buildObjects.get(i)?.find((o) => o.frame.name.startsWith('mill'));
+      if (img) img.setFrame(status.ok ? (['mill', 'mill_1', 'mill_2', 'mill_3'][Math.floor(time / 70) % 4]) : 'mill');
     }
   }
 
@@ -1046,6 +1078,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.queuedAttack || (!this.busy && (k.space.isDown))) this.attack(time);
     this.queuedAttack = false;
     this.creatures.update(time);
+    this.updateMills(time, delta);
     this.updateGhost();
     this.updateDoors();
 
