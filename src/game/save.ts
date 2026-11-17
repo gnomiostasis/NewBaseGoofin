@@ -33,6 +33,8 @@ export interface SaveData {
   mills: Array<[number, MillState]>;
   /** Bushes growing back: [tile index, ms left, prop]. */
   regrow: Array<[number, number, number]>;
+  /** Time of day (see daynight.ts). Older saves have none and start in the morning. */
+  clock?: number;
 }
 
 /** The parts of GameState a save reads and writes. */

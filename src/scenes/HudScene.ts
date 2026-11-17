@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { uiText } from '../ui/font';
+import { dayNumber, hourLabel, nightness } from '../game/daynight';
 import { SURVIVAL, TILE, ZONES } from '../config';
 import { UI } from '../art/palette';
 import { BUILD_LABEL } from '../build';
@@ -47,6 +48,8 @@ export class HudScene extends Phaser.Scene {
   private vignette!: Phaser.GameObjects.Image;
   private hungerFlash!: Phaser.GameObjects.Rectangle;
   private mapBox!: Phaser.GameObjects.Container;
+  private clockText!: Phaser.GameObjects.Text;
+  private clockKey = '';
   private mapDot!: Phaser.GameObjects.Rectangle;
   private mapScale = 0.75;
   private packBox!: Phaser.GameObjects.Container;
@@ -105,6 +108,7 @@ export class HudScene extends Phaser.Scene {
     this.drawControls();
     this.hurtFlash = this.add.rectangle(0, 0, 10, 10, 0xc8302a, 1).setOrigin(0).setAlpha(0);
     this.buildMsg = this.text(0, 0, '', 15, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 4);
+    this.clockText = this.text(0, 0, '', 15, UI.cream).setOrigin(1, 0).setStroke(UI.ink, 4);
     this.hint = this.add.container(0, 0);
     this.drawQuickControls();
 
@@ -167,6 +171,10 @@ export class HudScene extends Phaser.Scene {
       this.tweens.add({ targets: t, y: t.y - 28, alpha: 0, duration: 600, ease: 'Quad.easeOut', onComplete: () => t.destroy() });
     });
     this.gs.on('toast', (t) => this.toast(t));
+    this.gs.on('phase', (phase, day) => {
+      if (phase === 'dusk') this.showBanner('Night is falling', 'Creatures will hunt you after dark. Wall yourself in, or sleep in a bed.');
+      else this.showBanner(`Day ${day}`, 'The night creatures slink back into the woods.');
+    });
     this.gs.on('gained', (wx, wy, items) => this.floatGain(wx, wy, items));
     this.gs.on('prompt', (t, blocked) => {
       this.prompt.setVisible(t !== null);
@@ -508,6 +516,7 @@ export class HudScene extends Phaser.Scene {
     this.mapBox.setPosition(width - size - 22, 22);
     // Hide the map on small screens by default; M still shows it.
     if (width < 700) this.mapBox.setVisible(false);
+    this.clockText.setPosition(width - 22, width < 700 ? 16 : 22 + size + 14);
   }
 
   private drawBars() {
@@ -620,6 +629,14 @@ export class HudScene extends Phaser.Scene {
   update(_time: number, _delta: number) {
     const st = this.worldScene.state;
     const w = this.worldScene.world;
+
+    const clock = this.gs.clock;
+    const key = `Day ${dayNumber(clock)}  ·  ${hourLabel(clock)}`;
+    if (key !== this.clockKey) {
+      this.clockKey = key;
+      this.clockText.setText(key);
+    }
+    this.clockText.setColor(nightness(clock) > 0.5 ? '#b9c6ff' : UI.cream);
 
     if (st.zone !== this.lastZone) {
       const z = ZONES[st.zone];

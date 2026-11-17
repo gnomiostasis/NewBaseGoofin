@@ -15,6 +15,8 @@ export interface GameEvents {
   /** What clicking would do right now, or null. */
   prompt: (text: string | null, blocked: boolean) => void;
   levelup: (level: number) => void;
+  /** Night is falling, or morning has come. */
+  phase: (phase: 'dusk' | 'dawn', day: number) => void;
 }
 
 /** Everything about the player's run that the world and the HUD both need. */
@@ -39,6 +41,8 @@ export class GameState {
   lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }> = [];
   /** Lumber mills by tile index. */
   readonly mills = new Map<number, MillState>();
+  /** Milliseconds of play since the run began; drives the day and night cycle. */
+  clock = 0;
   readonly events = new Phaser.Events.EventEmitter();
   readonly sfx = new Sfx();
 

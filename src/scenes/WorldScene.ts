@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { PACK, PLAYER, SPRINT_MULTIPLIER, SURVIVAL, TILE } from '../config';
+import { NightSystem } from './NightSystem';
 import { CreatureSystem } from './CreatureSystem';
-import { COMBAT, playerDamage } from '../game/creatures';
+import { COMBAT, NIGHT, playerDamage } from '../game/creatures';
+import { dayNumber, isNight, nextMorning } from '../game/daynight';
 import { LEVELING } from '../game/stats';
 import { describeMill, millStatus, tickMill } from '../game/mill';
 import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
@@ -123,8 +125,11 @@ export class WorldScene extends Phaser.Scene {
     if (save) applyWorldChanges(this.world, save);
     this.buildTilemap();
     this.createAnimations();
+    this.night = new NightSystem(this);
+    this.doorBlockers = this.physics.add.staticGroup();
     this.buildCamp();
     this.createPlayer();
+    this.playerLight = this.night.addLight({ x: 0, y: 0, r: 40 });
     if (save) this.restore(save);
     this.time.addEvent({ delay: AUTOSAVE_MS, loop: true, callback: () => this.save() });
     const onHide = () => document.visibilityState === 'hidden' && this.save();
@@ -202,6 +207,7 @@ export class WorldScene extends Phaser.Scene {
       ...worldChanges(w, this.baseProps),
       ...captureState(this.game_),
       regrow: this.regrow.map((g) => [g.i, Math.max(0, g.at - now), g.prop]),
+      clock: Math.round(this.game_.clock),
     });
   }
 
@@ -209,12 +215,13 @@ export class WorldScene extends Phaser.Scene {
     const st = this.game_;
     const w = this.world;
     restoreState(st, d);
+    st.clock = typeof d.clock === 'number' && d.clock >= 0 ? d.clock : 0;
     st.pack.baseCapacity = PACK.capacity + st.mods.carryBonus;
     this.player.setPosition(d.player.x, d.player.y);
     for (let i = 0; i < w.build.length; i++) {
       if (!w.build[i] && !w.floor[i]) continue;
       if (w.build[i] === Build.Chest) this.chests.add(i);
-      if (w.build[i] === Build.Door) this.doors.add(i);
+      if (w.build[i] === Build.Door) this.setDoor(i, true);
       const x = i % w.width;
       this.renderBuild(x, (i - x) / w.width);
     }
@@ -235,6 +242,14 @@ export class WorldScene extends Phaser.Scene {
   private buildObjects = new Map<number, Phaser.GameObjects.Image[]>();
   private ghost!: Phaser.GameObjects.Image;
   private chests = new Set<number>();
+  night!: NightSystem;
+  private playerLight!: { x: number; y: number; r: number };
+  /** Invisible bodies on door tiles that stop creatures (but not you). */
+  doorBlockers!: Phaser.Physics.Arcade.StaticGroup;
+  private doorBlocker = new Map<number, Phaser.GameObjects.Zone>();
+  /** Bite damage structures have taken; they're back to full after a reload. */
+  private structureHp = new Map<number, number>();
+  private wasNight = false;
   private doors = new Set<number>();
 
   // ---------------------------------------------------------------- world
@@ -307,9 +322,10 @@ export class WorldScene extends Phaser.Scene {
           .image(centerX, bottom - 6, 'atlas', 'glow')
           .setBlendMode(Phaser.BlendModes.ADD)
           .setAlpha(0.22)
-          .setDepth(100000);
+          .setDepth(160000);
         this.tweens.add({ targets: glow, alpha: 0.32, scale: 1.08, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         this.addSmoke(centerX, bottom - 12);
+        this.night.addLight({ x: centerX, y: bottom - 6, r: 84, flicker: true });
         break;
       }
       case 'bedroll':
@@ -322,8 +338,9 @@ export class WorldScene extends Phaser.Scene {
           .setScale(0.3)
           .setAlpha(0.25)
           .setBlendMode(Phaser.BlendModes.ADD)
-          .setDepth(100000);
+          .setDepth(160000);
         this.tweens.add({ targets: g, alpha: 0.35, duration: 900, yoyo: true, repeat: -1 });
+        this.night.addLight({ x: o.tx * TILE + 9, y: bottom - 10, r: 46, flicker: true });
         break;
       }
       default:
@@ -427,7 +444,7 @@ export class WorldScene extends Phaser.Scene {
           .setTint(0x6fd6e8)
           .setAlpha(0.45)
           .setBlendMode(Phaser.BlendModes.ADD)
-          .setDepth(100000),
+          .setDepth(160000),
       );
     }
     if (watchers && p === Prop.Tree && w.zone[i] === 3 && hash2(tx, ty, 777) < 0.035) {
@@ -713,6 +730,15 @@ export class WorldScene extends Phaser.Scene {
 
   private rest(inBed = false) {
     const st = this.game_;
+    const night = isNight(st.clock);
+    if (night && inBed && this.creatures.hunting(10)) {
+      st.emit('toast', "You can't sleep with something prowling this close. Wall yourself in.");
+      return;
+    }
+    if (night && inBed) {
+      this.sleepThroughNight();
+      return;
+    }
     if (inBed && st.vitals.stamina >= SURVIVAL.maxStamina - 1) {
       st.emit('toast', 'You will wake up here if you collapse.');
       return;
@@ -730,6 +756,26 @@ export class WorldScene extends Phaser.Scene {
       st.vitals.hunger = Math.max(0, st.vitals.hunger - 8);
       st.emit('toast', inBed ? 'You sleep in your own bed. Energy restored, and you will wake here.' : 'You rest by the fire. Energy restored.');
       cam.fadeIn(450, 16, 24, 35);
+      this.busy = false;
+      this.save();
+    });
+  }
+
+  /** Sleeping in a bed at night skips to morning. */
+  private sleepThroughNight() {
+    const st = this.game_;
+    this.busy = true;
+    this.player.setVelocity(0, 0);
+    const cam = this.cameras.main;
+    cam.fadeOut(600, 8, 10, 24);
+    cam.once('camerafadeoutcomplete', () => {
+      st.clock = nextMorning(st.clock);
+      this.wasNight = false;
+      this.creatures.clearNocturnal();
+      st.vitals.stamina = SURVIVAL.maxStamina;
+      st.vitals.hunger = Math.max(0, st.vitals.hunger - 15);
+      st.emit('toast', `You sleep through the night. Morning of day ${dayNumber(st.clock)}.`);
+      cam.fadeIn(900, 8, 10, 24);
       this.busy = false;
       this.save();
     });
@@ -938,7 +984,7 @@ export class WorldScene extends Phaser.Scene {
     if (def.kind === 'floor') w.floor[i] = 1;
     else w.build[i] = BUILD_ID[def.kind];
     if (def.kind === 'chest') this.chests.add(i);
-    if (def.kind === 'door') this.doors.add(i);
+    if (def.kind === 'door') this.setDoor(i, true);
     if (def.kind === 'mill') st.mills.set(i, { work: 0, made: 0 });
     if (isBlocked(w, x, y)) this.collideLayer.putTileAt(T_BLOCK, x, y);
     this.renderBuild(x, y);
@@ -951,27 +997,95 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private removeAtPointer() {
+  /** Takes down whatever is built on (x, y), floor last. Returns what it was, or null. */
+  private clearBuild(x: number, y: number): BuildKind | null {
     const st = this.game_;
     const w = this.world;
-    const [x, y] = this.pointerTile();
-    if (!inBounds(w, x, y)) return;
     const i = idx(w, x, y);
     let kind: BuildKind | null = null;
     if (w.build[i] !== Build.None) {
       kind = KIND_OF[w.build[i]];
       w.build[i] = Build.None;
       this.chests.delete(i);
-      this.doors.delete(i);
+      this.setDoor(i, false);
       st.mills.delete(i);
+      this.structureHp.delete(i);
     } else if (w.floor[i]) {
       kind = 'floor';
       w.floor[i] = 0;
     }
-    if (!kind) return;
+    if (!kind) return null;
     if (!isBlocked(w, x, y)) this.collideLayer.removeTileAt(x, y);
     this.renderBuild(x, y);
     this.refreshAround(x, y);
+    return kind;
+  }
+
+  /** Doors let you through but not creatures: each one has an invisible blocker only they bump into. */
+  private setDoor(i: number, on: boolean) {
+    const w = this.world;
+    const old = this.doorBlocker.get(i);
+    if (old) {
+      old.destroy();
+      this.doorBlocker.delete(i);
+    }
+    if (!on) {
+      this.doors.delete(i);
+      return;
+    }
+    this.doors.add(i);
+    const x = i % w.width;
+    const y = (i - x) / w.width;
+    const z = this.add.zone(x * TILE + 8, y * TILE + 8, TILE, TILE);
+    this.doorBlockers.add(z);
+    this.doorBlocker.set(i, z);
+  }
+
+  /**
+   * A creature bites the structure on tile (x, y). Walls and doors hold for a while, then break.
+   * Returns true if there was something there to bite.
+   */
+  damageStructure(x: number, y: number, damage: number): boolean {
+    const w = this.world;
+    if (!inBounds(w, x, y)) return false;
+    const i = idx(w, x, y);
+    const b = w.build[i];
+    if (b === Build.None) return false;
+    const max = b === Build.Wall ? NIGHT.structureHp.wall : b === Build.Door ? NIGHT.structureHp.door : NIGHT.structureHp.other;
+    const hp = (this.structureHp.get(i) ?? max) - damage;
+    for (const o of this.buildObjects.get(i) ?? []) {
+      o.setTintFill(0xffffff);
+      this.time.delayedCall(70, () => o.active && o.clearTint());
+      this.tweens.add({ targets: o, x: o.x + (Math.random() < 0.5 ? -1 : 1), duration: 40, yoyo: true });
+    }
+    this.sfx.thud();
+    if (hp > 0) {
+      this.structureHp.set(i, hp);
+      return true;
+    }
+    const kind = this.clearBuild(x, y);
+    for (let k = 0; k < 6; k++) {
+      const chip = this.add.rectangle(x * TILE + 8, y * TILE + 8, 2, 2, 0x8a5a33).setDepth(200001);
+      this.tweens.add({
+        targets: chip,
+        x: chip.x + Phaser.Math.Between(-10, 10),
+        y: chip.y + Phaser.Math.Between(-10, 6),
+        alpha: 0,
+        duration: 420,
+        onComplete: () => chip.destroy(),
+      });
+    }
+    this.game_.emit('toast', `Something broke through your ${kind ?? 'wall'}!`);
+    return true;
+  }
+
+  private removeAtPointer() {
+    const st = this.game_;
+    const w = this.world;
+    const [x, y] = this.pointerTile();
+    if (!inBounds(w, x, y)) return;
+    const kind = this.clearBuild(x, y);
+    if (!kind) return;
     const refund = refundFor(kind);
     const got: Array<[ItemId, number]> = [];
     for (const [id, n] of refund) {
@@ -1014,6 +1128,19 @@ export class WorldScene extends Phaser.Scene {
       const open = tiles.includes(i) || tiles.includes(i + w.width) || tiles.includes(i - w.width);
       img.setFrame(open ? 'door_open' : 'door');
     }
+  }
+
+  private updateDayNight(time: number, delta: number) {
+    const st = this.game_;
+    st.clock += delta;
+    const night = isNight(st.clock);
+    if (night !== this.wasNight) {
+      this.wasNight = night;
+      st.emit('phase', night ? 'dusk' : 'dawn', dayNumber(st.clock));
+    }
+    this.playerLight.x = this.player.x;
+    this.playerLight.y = this.player.body.center.y - 4;
+    this.night.update(st.clock, time);
   }
 
   private millText(x: number, y: number): string {
@@ -1218,6 +1345,7 @@ export class WorldScene extends Phaser.Scene {
     }
     this.queuedAttack = false;
     this.queuedSwing = false;
+    this.updateDayNight(time, delta);
     this.creatures.update(time);
     this.updateMills(time, delta);
     this.updateGhost();
