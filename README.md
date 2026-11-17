@@ -41,11 +41,13 @@ Controls:
 | WASD / arrows | Walk |
 | Shift | Run (uses energy) |
 | Left click | Use what you click on next to you, or what's in front of you: gather it (hold to keep chopping or mining), store materials in a chest or the camp crate, rest, sleep, open the workbench |
-| Space or J | Swing at a creature in front of you (uses energy; an axe hits harder) |
+| Right click | Swing your weapon toward the mouse; hold to keep swinging (uses energy; an axe hits harder) |
+| Space or J | Swing at whatever is in front of you |
 | F | Eat (mushrooms first, then berries) |
 | C | Hand-crafting (then 1 or 2 to craft) |
 | B | Build mode: 1-7 picks floor, wall, door, chest, bed, workbench or lumber mill; left click builds, right click removes (half the cost back) |
 | L | Stats: 1-4 spends a point on Strength, Endurance, Agility or Gathering |
+| H | Show or hide the controls panel (also on the title screen) |
 | Esc | Close any panel or build mode |
 | M | Show or hide the map |
 

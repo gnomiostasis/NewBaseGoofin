@@ -8,6 +8,7 @@ import { BENCH_RECIPES, HAND_RECIPES, ITEMS, type ItemId, type Recipe } from '..
 import { BUILDABLES, payCost } from '../game/build';
 import { LEVELING, STAT_INFO, STAT_ORDER, xpToNext } from '../game/stats';
 import { GameState } from '../game/state';
+import { CONTROLS } from '../game/controls';
 import type { WorldScene } from './WorldScene';
 
 const FONT = '"Pixelify Sans", "Courier New", monospace';
@@ -20,7 +21,7 @@ const ZONE_BLURBS: Record<number, string> = {
   3: 'Cold and dark. Something watches from between the pines.',
 };
 
-const HINT = '[WASD] walk   [Shift] run   [Click] use   [Space] attack   [F] eat   [C] craft   [B] build   [L] stats   [M] map';
+const HINT = '[WASD] walk   [Click] use   [Right click] swing   [C] craft   [B] build   [H] controls';
 
 /** Screen-space overlay: vitals, compass, pack, prompts, crafting, stash, minimap, banners. */
 export class HudScene extends Phaser.Scene {
@@ -49,6 +50,8 @@ export class HudScene extends Phaser.Scene {
   private statsOpen = false;
   private statsKey = '';
   private statsBox!: Phaser.GameObjects.Container;
+  /** The controls panel (H). */
+  private controlsBox!: Phaser.GameObjects.Container;
   private hurtFlash!: Phaser.GameObjects.Rectangle;
   private handOpen = false;
   private buildBox!: Phaser.GameObjects.Container;
@@ -91,6 +94,8 @@ export class HudScene extends Phaser.Scene {
     this.stashBox = this.add.container(0, 0);
     this.buildBox = this.add.container(0, 0).setVisible(false);
     this.statsBox = this.add.container(0, 0).setVisible(false);
+    this.controlsBox = this.add.container(0, 0).setVisible(false);
+    this.drawControls();
     this.hurtFlash = this.add.rectangle(0, 0, 10, 10, 0xc8302a, 1).setOrigin(0).setAlpha(0);
     this.buildMsg = this.text(0, 0, '', 15, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 4);
     this.hint = this.text(0, 0, HINT, 15, UI.cream).setOrigin(0.5, 1).setStroke(UI.ink, 4);
@@ -131,7 +136,13 @@ export class HudScene extends Phaser.Scene {
       this.statsOpen = !this.statsOpen;
       this.statsKey = '';
     });
-    kb.on('keydown-ESC', () => (this.statsOpen = false));
+    kb.on('keydown-ESC', () => {
+      this.statsOpen = false;
+      this.controlsBox.setVisible(false);
+    });
+    kb.on('keydown-H', (ev: KeyboardEvent) => {
+      if (!ev.repeat) this.controlsBox.setVisible(!this.controlsBox.visible);
+    });
     this.gs.on('levelup', (lv) => {
       this.showBanner(`Level ${lv}!`, 'You have a stat point to spend. Press L.');
       this.statsKey = '';
@@ -479,6 +490,7 @@ export class HudScene extends Phaser.Scene {
     this.craftBox.setPosition(width / 2, Math.round(height * 0.28));
     this.stashBox.setPosition(12, 152);
     this.statsBox.setPosition(width / 2, Math.round(height * 0.2));
+    this.controlsBox.setPosition(width / 2, Math.max(12, Math.round(height / 2 - 190)));
     this.hurtFlash.setSize(width, height);
     this.buildBox.setPosition(width / 2, 12);
     this.buildMsg.setPosition(width / 2, 108);
@@ -519,6 +531,24 @@ export class HudScene extends Phaser.Scene {
   }
 
   /** Character sheet (L): level, XP, and the four stats with [1-4] to spend points. */
+  /** A parchment card listing every control. */
+  private drawControls() {
+    const w = 660;
+    const rowH = 24;
+    const h = 66 + CONTROLS.length * rowH;
+    const g = this.add.graphics();
+    this.drawPanel(g, -w / 2, 0, w, h);
+    this.controlsBox.add(g);
+    this.controlsBox.add(this.text(-w / 2 + 20, 14, 'Controls', 20, UI.ink));
+    this.controlsBox.add(this.text(w / 2 - 20, 20, '[H] or [Esc] to close', 12, UI.wood).setOrigin(1, 0));
+    CONTROLS.forEach(([key, does], k) => {
+      const y = 48 + k * rowH;
+      this.controlsBox.add(this.text(-w / 2 + 20, y, key, 14, UI.ink));
+      this.controlsBox.add(this.text(-w / 2 + 150, y + 1, does, 13, UI.wood));
+    });
+    this.controlsBox.setDepth(10);
+  }
+
   private redrawStats() {
     this.statsBox.setVisible(this.statsOpen);
     if (!this.statsOpen) return;

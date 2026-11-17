@@ -6,6 +6,7 @@ import { GRASS_VARIANTS, TREE_FRAMES } from '../art/textures';
 import { hash2 } from '../world/rng';
 import { GameState } from '../game/state';
 import { ago, deleteSave, loadSave, type SaveData } from '../game/save';
+import { CONTROLS } from '../game/controls';
 
 const FONT = '"Pixelify Sans", "Courier New", monospace';
 const hex = (h: string) => Phaser.Display.Color.HexStringToColor(h).color;
@@ -22,6 +23,7 @@ export class TitleScene extends Phaser.Scene {
   private options: Option[] = [];
   private sel = 0;
   private confirmNew = false;
+  private showControls = false;
   private uiCam!: Phaser.Cameras.Scene2D.Camera;
   private menu!: Phaser.GameObjects.Container;
   private diorama: Phaser.GameObjects.GameObject[] = [];
@@ -173,6 +175,14 @@ export class TitleScene extends Phaser.Scene {
         this.start(null);
       },
     });
+    this.options.push({
+      label: this.showControls ? 'Hide controls' : 'Controls',
+      detail: 'Every key and button (H shows them in game)',
+      run: () => {
+        this.showControls = !this.showControls;
+        this.buildMenu();
+      },
+    });
     this.sel = Math.min(this.sel, this.options.length - 1);
 
     this.menu.removeAll(true);
@@ -210,13 +220,28 @@ export class TitleScene extends Phaser.Scene {
       zone.on('pointerdown', () => o.run());
       this.menu.add(zone);
     });
-    const help = [
-      '[W/S] choose   [Enter] start',
-      'Your game saves itself every 20 seconds and whenever you sleep.',
-    ];
-    help.forEach((line, k) =>
-      this.menu.add(this.text(0, top + h + 22 + k * 20, line, 13, UI.cream).setOrigin(0.5, 0).setStroke(UI.outline, 4)),
-    );
+    if (this.showControls) {
+      const cw = 620;
+      const ch = 24 + CONTROLS.length * 20;
+      const cy = top + h + 12;
+      const cg = this.add.graphics();
+      cg.fillStyle(hex(UI.outline)).fillRect(-cw / 2, cy, cw, ch);
+      cg.fillStyle(hex(UI.wood)).fillRect(-cw / 2 + 3, cy + 3, cw - 6, ch - 6);
+      cg.fillStyle(hex(UI.parchment)).fillRect(-cw / 2 + 8, cy + 8, cw - 16, ch - 16);
+      this.menu.add(cg);
+      CONTROLS.forEach(([key, does], k) => {
+        this.menu.add(this.text(-cw / 2 + 20, cy + 12 + k * 20, key, 13, UI.ink));
+        this.menu.add(this.text(-cw / 2 + 140, cy + 13 + k * 20, does, 12, UI.wood));
+      });
+    } else {
+      const help = [
+        '[W/S] choose   [Enter] start',
+        'Your game saves itself every 20 seconds and whenever you sleep.',
+      ];
+      help.forEach((line, k) =>
+        this.menu.add(this.text(0, top + h + 22 + k * 20, line, 13, UI.cream).setOrigin(0.5, 0).setStroke(UI.outline, 4)),
+      );
+    }
     this.cameras.main.ignore(this.menu);
   }
 
