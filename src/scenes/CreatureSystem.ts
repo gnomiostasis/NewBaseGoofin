@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TILE } from '../config';
 import { CREATURES, NIGHT, SPAWN, nightCap, pickNightSpawn, pickSpawn, type CreatureDef, type CreatureId } from '../game/creatures';
 import { dayNumber, isNight } from '../game/daynight';
+import { Build, DEFENSE } from '../game/build';
 import { LEVELING } from '../game/stats';
 import { idx, inBounds, isBlocked } from '../world/generate';
 import { tintAt } from '../world/shade';
@@ -30,6 +31,7 @@ interface Creature {
   stuckMs: number;
   sidestepUntil: number;
   sideA: number;
+  nextSpike: number;
 }
 
 /** Spawns, moves and fights the creatures of the Old Woods and the Deepwild. */
@@ -99,7 +101,9 @@ export class CreatureSystem {
     for (const r of [6, 11]) {
       const tx = Math.floor((x + Math.cos(a) * r) / TILE);
       const ty = Math.floor((y + Math.sin(a) * r) / TILE);
-      if (inBounds(w, tx, ty) && w.build[idx(w, tx, ty)] !== 0) return [tx, ty];
+      const b = inBounds(w, tx, ty) ? w.build[idx(w, tx, ty)] : 0;
+      // Spikes are walked over (painfully), not chewed through.
+      if (b !== Build.None && b !== Build.Spikes) return [tx, ty];
     }
     return null;
   }
@@ -145,6 +149,7 @@ export class CreatureSystem {
       stuckMs: 0,
       sidestepUntil: 0,
       sideA: 0,
+      nextSpike: 0,
     };
     this.list.push(c);
     return c;
@@ -166,17 +171,40 @@ export class CreatureSystem {
       const cy = c.sprite.body.center.y;
       if (Math.hypot(cx - hx, cy - hy) > reach) continue;
       hits++;
-      c.hp -= damage;
-      c.mode = 'chase';
-      c.stunnedUntil = time + 220;
-      const len = Math.hypot(cx - x, cy - y) || 1;
-      c.sprite.setVelocity(((cx - x) / len) * 170, ((cy - y) / len) * 170);
-      c.sprite.setTintFill(0xffffff);
-      this.scene.time.delayedCall(90, () => c.sprite.active && c.sprite.clearTint());
-      this.scene.events.emit('creature-hit', cx, cy - 8, damage);
-      if (c.hp <= 0) this.kill(c);
+      this.damage(c, damage, x, y, time);
     }
     return hits;
+  }
+
+  /** Hurts a creature, knocking it back from (fromX, fromY). `knock` 0 stops it without a shove. */
+  damage(c: Creature, damage: number, fromX: number, fromY: number, time: number, knock = 170) {
+    if (!this.list.includes(c)) return;
+    const cx = c.sprite.body.center.x;
+    const cy = c.sprite.body.center.y;
+    c.hp -= damage;
+    c.mode = 'chase';
+    c.stunnedUntil = time + (knock > 0 ? 220 : 120);
+    const len = Math.hypot(cx - fromX, cy - fromY) || 1;
+    c.sprite.setVelocity(((cx - fromX) / len) * knock, ((cy - fromY) / len) * knock);
+    c.sprite.setTintFill(0xffffff);
+    this.scene.time.delayedCall(90, () => c.sprite.active && c.sprite.clearTint());
+    this.scene.events.emit('creature-hit', cx, cy - 8, damage);
+    if (c.hp <= 0) this.kill(c);
+  }
+
+  /** The closest living creature to (x, y) within `range` pixels, for turrets. */
+  nearest(x: number, y: number, range: number): Creature | null {
+    let best: Creature | null = null;
+    let bestD = range;
+    for (const c of this.list) {
+      if (c.leaving) continue;
+      const d = Math.hypot(c.sprite.body.center.x - x, c.sprite.body.center.y - y);
+      if (d < bestD) {
+        best = c;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   private kill(c: Creature) {
@@ -293,6 +321,16 @@ export class CreatureSystem {
       if (c.nocturnal && c.mode === 'chase' && dist >= 0.9 && time >= c.nextGnaw && time >= c.stunnedUntil) {
         const ahead = this.builtAhead(cx, cy, Math.atan2(p.body.center.y - cy, p.x - cx));
         if (ahead && s.damageStructure(ahead[0], ahead[1], c.def.damage)) c.nextGnaw = time + c.def.attackCooldown;
+      }
+
+      // Spike traps hurt and slow whatever crosses them.
+      if (w.build[i] === Build.Spikes) {
+        spr.body.velocity.scale(DEFENSE.spikeSlow);
+        if (time >= c.nextSpike) {
+          c.nextSpike = time + DEFENSE.spikeEveryMs;
+          this.damage(c, DEFENSE.spikeDamage, cx, cy, time, 0);
+          if (!this.list.includes(c)) continue;
+        }
       }
 
       // Bite when touching.

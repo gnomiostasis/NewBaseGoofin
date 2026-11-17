@@ -127,8 +127,8 @@ export class HudScene extends Phaser.Scene {
       this.gs.buildMode = false;
     });
     kb.on('keydown', (ev: KeyboardEvent) => {
-      const n = Number(ev.key);
-      if (!(n >= 1 && n <= 9)) return;
+      const n = ev.key === '0' ? 10 : Number(ev.key);
+      if (!(n >= 1 && n <= 10)) return;
       if (this.statsOpen) {
         if (n <= STAT_ORDER.length && this.gs.progress.spend(STAT_ORDER[n - 1])) {
           this.gs.sfx.craft();
@@ -321,7 +321,7 @@ export class HudScene extends Phaser.Scene {
     const key = `${gs.buildSel}|${(['wood', 'stone', 'fiber', 'copper_ore'] as ItemId[]).map(have).join()}`;
     this.buildMsg.setText(
       gs.buildMsg ??
-        `[Left click] build   [Right click] remove   [1-7] choose   [B] done   ·   uses your pack, then storage`,
+        `[Left click] build   [Right click] remove   [1-0] choose   [B] done   ·   uses your pack, then storage`,
     );
     this.buildMsg.setColor(gs.buildMsg ? '#f0b8a0' : UI.cream);
     if (key === this.buildKey) return;
@@ -342,7 +342,7 @@ export class HudScene extends Phaser.Scene {
       cell.fillStyle(hex('#e7cf9c')).fillRect(x + 4, 10, slot - 8, h - 20);
       this.buildBox.add(cell);
       const frame = b.kind === 'wall' ? 'wall_0' : b.kind;
-      this.buildBox.add(this.text(x + 8, 12, String(k + 1), 11, UI.wood));
+      this.buildBox.add(this.text(x + 8, 12, String((k + 1) % 10), 11, UI.wood));
       const name = this.text(x + slot / 2 + 5, 13, b.name, 12, afford ? UI.ink : '#9c8566').setOrigin(0.5, 0);
       // Long names like "Workbench" shrink a little so they clear the slot number.
       if (name.width > slot - 30) name.setScale((slot - 30) / name.width);
