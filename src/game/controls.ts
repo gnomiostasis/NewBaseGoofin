@@ -7,7 +7,7 @@ export const CONTROLS: Array<[key: string, does: string]> = [
   ['Space', "Swing at what's in front of you"],
   ['F', 'Eat (mushrooms first, then berries)'],
   ['C', 'Craft by hand'],
-  ['B', 'Build: 1-7 picks, left click builds, right click removes'],
+  ['B', 'Build: 1-9 and 0 pick, left click builds, right click removes'],
   ['L', 'Stats: 1-4 spends a point'],
   ['M', 'Map'],
   ['H', 'Show or hide these controls'],

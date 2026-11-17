@@ -11,9 +11,12 @@ export enum Build {
   Bed = 4,
   Workbench = 5,
   Mill = 6,
+  Spikes = 7,
+  Torch = 8,
+  Turret = 9,
 }
 
-export type BuildKind = 'floor' | 'wall' | 'door' | 'chest' | 'bed' | 'workbench' | 'mill';
+export type BuildKind = 'floor' | 'wall' | 'door' | 'chest' | 'bed' | 'workbench' | 'mill' | 'spikes' | 'torch' | 'turret';
 
 export interface BuildDef {
   kind: BuildKind;
@@ -23,7 +26,7 @@ export interface BuildDef {
   blurb: string;
 }
 
-/** In build-bar order: keys 1-7 pick them. */
+/** In build-bar order: keys 1-9 and 0 pick them. */
 export const BUILDABLES: BuildDef[] = [
   { kind: 'floor', name: 'Floor', cost: { wood: 1 }, blurb: 'Plank floor to walk on' },
   { kind: 'wall', name: 'Wall', cost: { wood: 2 }, blurb: 'Keeps things out' },
@@ -32,7 +35,25 @@ export const BUILDABLES: BuildDef[] = [
   { kind: 'bed', name: 'Bed', cost: { wood: 4, fiber: 4 }, blurb: 'Rest here; you wake here if you collapse' },
   { kind: 'workbench', name: 'Workbench', cost: { wood: 5, stone: 3 }, blurb: 'Crafts copper tools and a bigger pack' },
   { kind: 'mill', name: 'Mill', cost: { wood: 10, stone: 6, copper_ore: 2 }, blurb: 'Saws wood from nearby trees into a chest' },
+  { kind: 'spikes', name: 'Spikes', cost: { wood: 2, stone: 2 }, blurb: 'Hurts and slows creatures that cross; you can walk over it' },
+  { kind: 'torch', name: 'Torch', cost: { wood: 1, fiber: 1 }, blurb: 'Lights up the night around it' },
+  { kind: 'turret', name: 'Turret', cost: { wood: 8, stone: 8 }, blurb: 'Shoots creatures in range; uses stone from storage as ammo' },
 ];
+
+/** Spike traps and turrets: the numbers behind your defenses. */
+export const DEFENSE = {
+  spikeDamage: 7,
+  /** A creature on spikes is hurt this often, and moves at this fraction of its speed. */
+  spikeEveryMs: 600,
+  spikeSlow: 0.45,
+  turretRange: 6,
+  turretDamage: 12,
+  turretEveryMs: 1000,
+  /** Stone used per shot. */
+  turretAmmo: 1,
+  boltSpeed: 260,
+  torchLight: 56,
+};
 
 export const BUILD_ID: Record<Exclude<BuildKind, 'floor'>, Build> = {
   wall: Build.Wall,
@@ -41,6 +62,9 @@ export const BUILD_ID: Record<Exclude<BuildKind, 'floor'>, Build> = {
   bed: Build.Bed,
   workbench: Build.Workbench,
   mill: Build.Mill,
+  spikes: Build.Spikes,
+  torch: Build.Torch,
+  turret: Build.Turret,
 };
 
 export const KIND_OF: Record<number, BuildKind> = {
@@ -50,6 +74,9 @@ export const KIND_OF: Record<number, BuildKind> = {
   [Build.Bed]: 'bed',
   [Build.Workbench]: 'workbench',
   [Build.Mill]: 'mill',
+  [Build.Spikes]: 'spikes',
+  [Build.Torch]: 'torch',
+  [Build.Turret]: 'turret',
 };
 
 /** Ground cover that building simply clears away. */
@@ -82,7 +109,7 @@ export function canPlace(
     return { ok: true };
   }
   if (w.build[i] !== Build.None) return { ok: false, reason: 'Something is already built here' };
-  if (kind !== 'door' && playerTiles.some(([px, py]) => px === x && py === y))
+  if (kind !== 'door' && kind !== 'spikes' && playerTiles.some(([px, py]) => px === x && py === y))
     return { ok: false, reason: "You're standing there" };
   return { ok: true };
 }

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { PACK, PLAYER, SPRINT_MULTIPLIER, SURVIVAL, TILE } from '../config';
-import { NightSystem } from './NightSystem';
+import { NightSystem, type Light } from './NightSystem';
 import { CreatureSystem } from './CreatureSystem';
 import { COMBAT, NIGHT, playerDamage } from '../game/creatures';
 import { dayNumber, isNight, nextMorning } from '../game/daynight';
@@ -30,6 +30,7 @@ import { Sfx } from '../game/sfx';
 import {
   BUILDABLES,
   BUILD_ID,
+  DEFENSE,
   BUILD_REACH,
   Build,
   KIND_OF,
@@ -222,6 +223,7 @@ export class WorldScene extends Phaser.Scene {
       if (!w.build[i] && !w.floor[i]) continue;
       if (w.build[i] === Build.Chest) this.chests.add(i);
       if (w.build[i] === Build.Door) this.setDoor(i, true);
+      this.attachDefense(i);
       const x = i % w.width;
       this.renderBuild(x, (i - x) / w.width);
     }
@@ -250,6 +252,10 @@ export class WorldScene extends Phaser.Scene {
   /** Bite damage structures have taken; they're back to full after a reload. */
   private structureHp = new Map<number, number>();
   private wasNight = false;
+  private torchLights = new Map<number, Light>();
+  /** Turret tile index to the time it can shoot again. */
+  private turrets = new Map<number, number>();
+  private ammoWarnAt = 0;
   private doors = new Set<number>();
 
   // ---------------------------------------------------------------- world
@@ -919,7 +925,19 @@ export class WorldScene extends Phaser.Scene {
     const b = w.build[i];
     if (b !== Build.None) {
       const frame = b === Build.Wall ? `wall_${wallMask(w, x, y)}` : b === Build.Door ? 'door' : KIND_OF[b];
-      objs.push(this.add.image(footX, footY, 'atlas', frame).setOrigin(0.5, 1).setDepth(footY).setTint(tint));
+      // Spikes lie flat, so you and creatures draw on top of them.
+      const depth = b === Build.Spikes ? footY - 12 : footY;
+      objs.push(this.add.image(footX, footY, 'atlas', frame).setOrigin(0.5, 1).setDepth(depth).setTint(tint));
+      if (b === Build.Torch) {
+        objs.push(
+          this.add
+            .image(footX, footY - 15, 'atlas', 'glow')
+            .setScale(0.32)
+            .setAlpha(0.3)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setDepth(160000),
+        );
+      }
     }
     if (objs.length) this.buildObjects.set(i, objs);
     else this.buildObjects.delete(i);
@@ -985,6 +1003,7 @@ export class WorldScene extends Phaser.Scene {
     else w.build[i] = BUILD_ID[def.kind];
     if (def.kind === 'chest') this.chests.add(i);
     if (def.kind === 'door') this.setDoor(i, true);
+    this.attachDefense(i);
     if (def.kind === 'mill') st.mills.set(i, { work: 0, made: 0 });
     if (isBlocked(w, x, y)) this.collideLayer.putTileAt(T_BLOCK, x, y);
     this.renderBuild(x, y);
@@ -1008,6 +1027,7 @@ export class WorldScene extends Phaser.Scene {
       w.build[i] = Build.None;
       this.chests.delete(i);
       this.setDoor(i, false);
+      this.detachDefense(i);
       st.mills.delete(i);
       this.structureHp.delete(i);
     } else if (w.floor[i]) {
@@ -1019,6 +1039,71 @@ export class WorldScene extends Phaser.Scene {
     this.renderBuild(x, y);
     this.refreshAround(x, y);
     return kind;
+  }
+
+  /** Torches light the night; turrets keep a cooldown. */
+  private attachDefense(i: number) {
+    const w = this.world;
+    const b = w.build[i];
+    const x = i % w.width;
+    const y = (i - x) / w.width;
+    if (b === Build.Torch) this.torchLights.set(i, this.night.addLight({ x: x * TILE + 8, y: y * TILE + 2, r: DEFENSE.torchLight, flicker: true }));
+    if (b === Build.Turret) this.turrets.set(i, 0);
+  }
+
+  private detachDefense(i: number) {
+    const l = this.torchLights.get(i);
+    if (l) this.night.removeLight(l);
+    this.torchLights.delete(i);
+    this.turrets.delete(i);
+  }
+
+  /** Turrets shoot the nearest creature in range, spending stone from storage (then your pack). */
+  private updateDefenses(time: number) {
+    const st = this.game_;
+    const w = this.world;
+    // Torch flames flicker.
+    const flame = Math.floor(time / 160) % 2 ? 'torch_1' : 'torch';
+    for (const i of this.torchLights.keys()) {
+      const img = this.buildObjects.get(i)?.[w.floor[i] ? 1 : 0];
+      if (img && img.frame.name !== flame) img.setFrame(flame);
+    }
+    for (const [i, ready] of this.turrets) {
+      if (time < ready) continue;
+      const x = i % w.width;
+      const y = (i - x) / w.width;
+      const ox = x * TILE + 8;
+      const oy = y * TILE + 4;
+      const target = this.creatures.nearest(ox, oy + 6, DEFENSE.turretRange * TILE);
+      if (!target) continue;
+      this.turrets.set(i, time + DEFENSE.turretEveryMs);
+      const fromStash = st.stash.count('stone') >= DEFENSE.turretAmmo;
+      if (!fromStash && st.pack.count('stone') < DEFENSE.turretAmmo) {
+        if (time >= this.ammoWarnAt) {
+          this.ammoWarnAt = time + 45_000;
+          st.emit('toast', 'Your turrets are out of stone. Put some in storage.');
+        }
+        continue;
+      }
+      (fromStash ? st.stash : st.pack).remove('stone', DEFENSE.turretAmmo);
+      const img = this.buildObjects.get(i)?.find((o) => o.frame.name.startsWith('turret'));
+      img?.setFrame('turret_fire');
+      this.time.delayedCall(120, () => img?.active && img.setFrame('turret'));
+      const tx = target.sprite.body.center.x;
+      const ty = target.sprite.body.center.y;
+      const bolt = this.add.image(ox, oy, 'atlas', 'bolt').setRotation(Math.atan2(ty - oy, tx - ox)).setDepth(200002);
+      this.sfx.swing();
+      this.tweens.add({
+        targets: bolt,
+        x: tx,
+        y: ty,
+        duration: (Math.hypot(tx - ox, ty - oy) / DEFENSE.boltSpeed) * 1000,
+        onComplete: () => {
+          bolt.destroy();
+          this.creatures.damage(target, DEFENSE.turretDamage, ox, oy, this.time.now);
+        },
+      });
+    }
   }
 
   /** Doors let you through but not creatures: each one has an invisible blocker only they bump into. */
@@ -1346,6 +1431,7 @@ export class WorldScene extends Phaser.Scene {
     this.queuedAttack = false;
     this.queuedSwing = false;
     this.updateDayNight(time, delta);
+    this.updateDefenses(time);
     this.creatures.update(time);
     this.updateMills(time, delta);
     this.updateGhost();

@@ -782,6 +782,60 @@ function crate(g: Ctx) {
   rect(g, 2, 12, 12, 1, WOOD[1]);
 }
 
+function spikes(g: Ctx) {
+  // 16 x 16: sharpened stakes poking out of a low wooden frame, flat on the ground.
+  rect(g, 1, 9, 14, 5, OUTLINE);
+  rect(g, 2, 10, 12, 3, WOOD[1]);
+  rect(g, 2, 10, 12, 1, WOOD[2]);
+  for (const x of [2, 6, 10]) {
+    rect(g, x + 1, 4, 2, 6, OUTLINE);
+    px(g, x + 1, 5, STONE[2]);
+    rect(g, x + 1, 6, 1, 4, STONE[0]);
+    px(g, x + 2, 3, OUTLINE);
+    px(g, x + 2, 4, STONE[2]);
+  }
+  for (const x of [4, 8, 12]) {
+    rect(g, x, 7, 1, 3, OUTLINE);
+    px(g, x, 6, STONE[1]);
+  }
+}
+
+function torch(g: Ctx, frame: number) {
+  // 8 x 18: a staked torch with a flickering flame.
+  shadow(g, 4, 17, 3, 1, 0.25);
+  rect(g, 3, 6, 2, 12, OUTLINE);
+  rect(g, 3, 7, 1, 10, WOOD[0]);
+  rect(g, 2, 5, 4, 2, WOOD[3]);
+  const h = frame === 0 ? 0 : 1;
+  rect(g, 2, 1 + h, 4, 4 - h, FIRE[0]);
+  rect(g, 3, 2 + h, 2, 3 - h, FIRE[1]);
+  px(g, 3 + frame, 3, FIRE[2]);
+  if (frame === 0) px(g, 4, 0, FIRE[1]);
+}
+
+function turret(g: Ctx, flash: boolean) {
+  // 16 x 22: a stone plinth with a wooden crossbow on top.
+  shadow(g, 8, 21, 7, 1.4, 0.3);
+  rect(g, 2, 11, 12, 10, OUTLINE);
+  rect(g, 3, 12, 10, 8, STONE[0]);
+  rect(g, 3, 12, 10, 2, STONE[2]);
+  rect(g, 3, 18, 10, 2, STONE[1]);
+  px(g, 5, 15, STONE[1]);
+  px(g, 10, 16, STONE[1]);
+  // Swivel and bow.
+  rect(g, 6, 8, 4, 4, OUTLINE);
+  rect(g, 7, 9, 2, 2, WOOD[1]);
+  rect(g, 1, 4, 14, 3, OUTLINE);
+  rect(g, 2, 5, 12, 1, WOOD[2]);
+  rect(g, 7, 1, 2, 9, OUTLINE);
+  rect(g, 7, 2, 1, 7, WOOD[0]);
+  px(g, 2, 6, OUTLINE);
+  px(g, 13, 6, OUTLINE);
+  rect(g, 3, 6, 10, 1, '#efe4cf');
+  px(g, 7, 1, flash ? FIRE[2] : STONE[2]);
+  px(g, 8, 1, flash ? FIRE[1] : STONE[0]);
+}
+
 function lantern(g: Ctx) {
   // 8 x 16: a pole with a hanging lantern.
   rect(g, 3, 2, 1, 14, WOOD[1]);
@@ -988,6 +1042,15 @@ export function buildTextures(scene: Phaser.Scene) {
   atlas.add('bed', 16, 24, bed);
   atlas.add('workbench', 16, 20, workbench);
   atlas.add('mill', 16, 28, (g) => lumberMill(g, 0));
+  atlas.add('spikes', 16, 16, spikes);
+  atlas.add('torch', 8, 18, (g) => torch(g, 0));
+  atlas.add('torch_1', 8, 18, (g) => torch(g, 1));
+  atlas.add('turret', 16, 22, (g) => turret(g, false));
+  atlas.add('turret_fire', 16, 22, (g) => turret(g, true));
+  atlas.add('bolt', 4, 2, (g) => {
+    rect(g, 0, 0, 4, 2, OUTLINE);
+    rect(g, 1, 0, 3, 1, STONE[2]);
+  });
   for (let f = 1; f < 4; f++) atlas.add(`mill_${f}`, 16, 28, (g) => lumberMill(g, f));
   atlas.add('item_copper_axe', 16, 16, iconCopperAxe);
   atlas.add('item_copper_pick', 16, 16, iconCopperPick);

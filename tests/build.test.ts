@@ -100,3 +100,26 @@ describe('building', () => {
     expect(pack.toolPower('axe')).toBe(2);
   });
 });
+
+describe('defenses', () => {
+  it('spikes can go under you and do not block; torches and turrets do', async () => {
+    const { generateWorld, idx, isBlocked } = await import('../src/world/generate');
+    const w = generateWorld();
+    const x = w.campX + 40;
+    const y = w.campY;
+    for (const [dx, dy] of [[0, 0], [1, 0], [2, 0]]) w.prop[idx(w, x + dx, y + dy)] = 0;
+    expect(canPlace(w, x, y, 'spikes', [[x, y]], new Set()).ok).toBe(true);
+    expect(canPlace(w, x, y, 'turret', [[x, y]], new Set()).ok).toBe(false);
+    w.build[idx(w, x, y)] = Build.Spikes;
+    w.build[idx(w, x + 1, y)] = Build.Torch;
+    w.build[idx(w, x + 2, y)] = Build.Turret;
+    expect(isBlocked(w, x, y)).toBe(false);
+    expect(isBlocked(w, x + 1, y)).toBe(true);
+    expect(isBlocked(w, x + 2, y)).toBe(true);
+  });
+
+  it('fit in the build bar with a key each (1-9, then 0)', () => {
+    expect(BUILDABLES.length).toBeLessThanOrEqual(10);
+    expect(BUILDABLES.map((b) => b.kind)).toEqual(expect.arrayContaining(['spikes', 'torch', 'turret']));
+  });
+});

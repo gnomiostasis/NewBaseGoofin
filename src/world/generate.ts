@@ -63,7 +63,7 @@ export interface World {
 }
 
 /** Structure ids that block movement. Kept here so collision has one source of truth. */
-export const BLOCKING_BUILDS = new Set<number>([1, 3, 4, 5, 6]);
+export const BLOCKING_BUILDS = new Set<number>([1, 3, 4, 5, 6, 8, 9]);
 
 export const isBlockingProp = (p: Prop) => BLOCKING.has(p);
 
