@@ -92,6 +92,7 @@ export class WorldScene extends Phaser.Scene {
   private knockUntil = 0;
   private lostPackImages: Phaser.GameObjects.Image[] = [];
   private queuedAttack = false;
+  private queuedSwing = false;
   private chunks = new Set<number>();
   private chunkTiles = new Map<number, number[]>();
   private propObjects = new Map<number, Phaser.GameObjects.Image[]>();
@@ -169,6 +170,8 @@ export class WorldScene extends Phaser.Scene {
       if (!this.game_.buildMode) {
         // Left click uses whatever is under the mouse, or what's in front of you.
         if (p.leftButtonDown()) this.queuedAct = true;
+        // Right click swings your weapon toward the mouse.
+        else if (p.rightButtonDown()) this.queuedSwing = true;
         return;
       }
       if (p.rightButtonDown()) this.removeAtPointer();
@@ -777,18 +780,24 @@ export class WorldScene extends Phaser.Scene {
 
   // --------------------------------------------------------------- combat
 
-  private attack(time: number) {
+  /** Swing at whatever is in front of you, or toward `aim` (a world point) if given. */
+  private attack(time: number, aim?: { x: number; y: number }) {
     const st = this.game_;
     if (time < this.nextAttack || this.busy) return;
+    if (aim) this.faceTile(Math.floor(aim.x / TILE), Math.floor(aim.y / TILE));
     if (!spendStamina(st.vitals, COMBAT.swingStamina)) {
       st.emit('toast', 'Too tired to swing.');
       this.nextAttack = time + 400;
       return;
     }
     this.nextAttack = time + COMBAT.swingCooldownMs;
-    const [dx, dy] = DIR_STEP[this.facing];
     const cx = this.player.x;
     const cy = this.player.body.center.y - 3;
+    let [dx, dy] = DIR_STEP[this.facing];
+    if (aim) {
+      const len = Math.hypot(aim.x - cx, aim.y - cy) || 1;
+      [dx, dy] = [(aim.x - cx) / len, (aim.y - cy) / len];
+    }
     const slash = this.add
       .image(cx + dx * 9, cy + dy * 9, 'atlas', 'slash')
       .setRotation(Math.atan2(dy, dx))
@@ -1191,7 +1200,14 @@ export class WorldScene extends Phaser.Scene {
     st.nearStorage = st.atCamp || this.nearChest(tx, ty);
     if (st.bench && Math.hypot(st.bench[0] - tx, st.bench[1] - ty) > 2.5) st.bench = null;
     if (this.queuedAttack || (!this.busy && (k.space.isDown))) this.attack(time);
+    // Right click (held or tapped) swings toward the mouse.
+    const pointer = this.input.activePointer;
+    if (!this.busy && !st.buildMode && (this.queuedSwing || pointer.rightButtonDown())) {
+      const aim = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+      this.attack(time, { x: aim.x, y: aim.y });
+    }
     this.queuedAttack = false;
+    this.queuedSwing = false;
     this.creatures.update(time);
     this.updateMills(time, delta);
     this.updateGhost();
