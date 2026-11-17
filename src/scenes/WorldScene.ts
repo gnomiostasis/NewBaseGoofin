@@ -913,7 +913,7 @@ export class WorldScene extends Phaser.Scene {
     const check = canPlace(this.world, x, y, def.kind, this.playerTiles(), this.campTiles());
     if (!check.ok) return check.reason;
     for (const [id, n] of Object.entries(def.cost) as Array<[ItemId, number]>) {
-      if (st.pack.count(id) + (st.storage?.count(id) ?? 0) < n) return `Need ${n} ${ITEMS[id].name.toLowerCase()}`;
+      if (st.pack.count(id) + st.stash.count(id) < n) return `Need ${n} ${ITEMS[id].name.toLowerCase()}`;
     }
     return null;
   }
@@ -928,7 +928,8 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     const def = BUILDABLES[st.buildSel];
-    if (!payCost(def.cost, st.pack, st.storage)) return;
+    // Building draws on your pack first, then on stored materials, wherever you are.
+    if (!payCost(def.cost, st.pack, st.stash)) return;
     const w = this.world;
     const i = idx(w, x, y);
     w.prop[i] = Prop.None;

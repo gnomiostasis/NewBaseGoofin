@@ -309,11 +309,11 @@ export class HudScene extends Phaser.Scene {
       this.buildKey = '';
       return;
     }
-    const have = (id: ItemId) => gs.pack.count(id) + (gs.storage?.count(id) ?? 0);
-    const key = `${gs.buildSel}|${!!gs.storage}|${(['wood', 'stone', 'fiber', 'copper_ore'] as ItemId[]).map(have).join()}`;
+    const have = (id: ItemId) => gs.pack.count(id) + gs.stash.count(id);
+    const key = `${gs.buildSel}|${(['wood', 'stone', 'fiber', 'copper_ore'] as ItemId[]).map(have).join()}`;
     this.buildMsg.setText(
       gs.buildMsg ??
-        `[Left click] build   [Right click] remove   [1-7] choose   [B] done   ·   using ${gs.storage ? 'pack + storage' : 'pack only'}`,
+        `[Left click] build   [Right click] remove   [1-7] choose   [B] done   ·   uses your pack, then storage`,
     );
     this.buildMsg.setColor(gs.buildMsg ? '#f0b8a0' : UI.cream);
     if (key === this.buildKey) return;
