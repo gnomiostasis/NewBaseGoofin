@@ -69,6 +69,30 @@ export function pickSpawn(zone: number, roll: number): CreatureId | null {
   return roll < 0.7 ? 'duskprowler' : 'bramblehog';
 }
 
+/** Night raids: creatures come out after dark and hunt you wherever you are, camp included. */
+export const NIGHT = {
+  /** Night creatures alive at once on the first night; each night adds more, up to `maxCount`. */
+  baseCount: 2,
+  perNight: 1,
+  maxCount: 9,
+  intervalMs: 3500,
+  /** Every structure has this much health against bites; walls and doors are tougher. */
+  structureHp: { wall: 400, door: 260, other: 120 } as const,
+  /** After you collapse, the night leaves you alone this long. */
+  graceMs: 30_000,
+};
+
+/** How many night creatures can be out on night `day` (1 = first night). */
+export function nightCap(day: number): number {
+  return Math.min(NIGHT.maxCount, NIGHT.baseCount + NIGHT.perNight * Math.max(0, day - 1));
+}
+
+/** Which creature a night raid sends (roll in [0, 1)): bramblehogs early on, then duskprowlers too. */
+export function pickNightSpawn(day: number, roll: number): CreatureId {
+  const prowlerChance = Math.min(0.5, Math.max(0, (day - 2) * 0.15));
+  return roll < prowlerChance ? 'duskprowler' : 'bramblehog';
+}
+
 export const COMBAT = {
   baseDamage: 5,
   /** Extra damage per point of axe power (stone 1, copper 2). */

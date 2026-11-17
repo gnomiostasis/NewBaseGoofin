@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TILE } from '../config';
-import { CREATURES, SPAWN, pickSpawn, type CreatureDef, type CreatureId } from '../game/creatures';
+import { CREATURES, NIGHT, SPAWN, nightCap, pickNightSpawn, pickSpawn, type CreatureDef, type CreatureId } from '../game/creatures';
+import { dayNumber, isNight } from '../game/daynight';
 import { LEVELING } from '../game/stats';
 import { idx, inBounds, isBlocked } from '../world/generate';
 import { tintAt } from '../world/shade';
@@ -20,12 +21,22 @@ interface Creature {
   stunnedUntil: number;
   bar: Phaser.GameObjects.Graphics;
   growled: boolean;
+  /** Came out with the night raid: hunts you anywhere and leaves at dawn. */
+  nocturnal: boolean;
+  /** Next time it can bite a wall in its way. */
+  nextGnaw: number;
+  leaving: boolean;
+  /** Stuck-on-a-tree handling: how long it's barely moved, and a sidestep it's taking. */
+  stuckMs: number;
+  sidestepUntil: number;
+  sideA: number;
 }
 
 /** Spawns, moves and fights the creatures of the Old Woods and the Deepwild. */
 export class CreatureSystem {
   readonly list: Creature[] = [];
   private nextSpawn = 0;
+  private nextNightSpawn = 0;
 
   constructor(private scene: WorldScene) {
     for (const id of Object.keys(CREATURES) as CreatureId[]) {
@@ -58,6 +69,54 @@ export class CreatureSystem {
     }
   }
 
+  /** A night raid: creatures appear out of sight, anywhere (even around camp), and come for you. */
+  private spawnNight(time: number) {
+    const s = this.scene;
+    const w = s.world;
+    const st = s.state;
+    const day = dayNumber(s.game_.clock);
+    const out = this.list.filter((c) => c.nocturnal).length;
+    if (out >= nightCap(day)) return;
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = SPAWN.minDist + Math.random() * (SPAWN.maxDist - SPAWN.minDist);
+      const tx = Math.round(st.tx + Math.cos(a) * d);
+      const ty = Math.round(st.ty + Math.sin(a) * d);
+      if (!inBounds(w, tx, ty) || isBlocked(w, tx, ty)) continue;
+      // Never pop up inside a pool of light.
+      if (s.night.litAt(tx * TILE + 8, ty * TILE + 8, 1.1)) continue;
+      const id = pickNightSpawn(day, Math.random());
+      const c = this.spawn(id, tx * TILE + 8, ty * TILE + 8, time);
+      c.nocturnal = true;
+      c.mode = 'chase';
+      return;
+    }
+  }
+
+  /** The built tile just ahead of (x, y) heading at angle `a`, if any. */
+  private builtAhead(x: number, y: number, a: number): [number, number] | null {
+    const w = this.scene.world;
+    for (const r of [6, 11]) {
+      const tx = Math.floor((x + Math.cos(a) * r) / TILE);
+      const ty = Math.floor((y + Math.sin(a) * r) / TILE);
+      if (inBounds(w, tx, ty) && w.build[idx(w, tx, ty)] !== 0) return [tx, ty];
+    }
+    return null;
+  }
+
+  /** True if a creature is coming for you within `tiles`. */
+  hunting(tiles: number): boolean {
+    const p = this.scene.player;
+    return this.list.some(
+      (c) => c.mode === 'chase' && !c.leaving && Math.hypot(c.sprite.x - p.x, c.sprite.y - p.y) / TILE < tiles,
+    );
+  }
+
+  /** Night creatures vanish when the night is slept away. */
+  clearNocturnal() {
+    for (const c of [...this.list]) if (c.nocturnal) this.remove(c);
+  }
+
   spawn(id: CreatureId, x: number, y: number, time = 0) {
     const s = this.scene;
     const def = CREATURES[id];
@@ -66,8 +125,29 @@ export class CreatureSystem {
     sprite.setCollideWorldBounds(true);
     sprite.play(`${id}_walk`);
     s.physics.add.collider(sprite, s.collisionLayer);
+    s.physics.add.collider(sprite, s.doorBlockers);
     const bar = s.add.graphics().setDepth(200003);
-    this.list.push({ sprite, def, hp: def.hp, homeX: x, homeY: y, mode: 'wander', nextThink: time, nextBite: 0, stunnedUntil: 0, bar, growled: false });
+    const c: Creature = {
+      sprite,
+      def,
+      hp: def.hp,
+      homeX: x,
+      homeY: y,
+      mode: 'wander',
+      nextThink: time,
+      nextBite: 0,
+      stunnedUntil: 0,
+      bar,
+      growled: false,
+      nocturnal: false,
+      nextGnaw: 0,
+      leaving: false,
+      stuckMs: 0,
+      sidestepUntil: 0,
+      sideA: 0,
+    };
+    this.list.push(c);
+    return c;
   }
 
   private remove(c: Creature) {
@@ -122,6 +202,7 @@ export class CreatureSystem {
   /** Everything in the outer zones forgets you when you collapse. */
   clear() {
     for (const c of [...this.list]) this.remove(c);
+    this.nextNightSpawn = this.scene.time.now + NIGHT.graceMs;
   }
 
   update(time: number) {
@@ -131,6 +212,11 @@ export class CreatureSystem {
     if (time >= this.nextSpawn) {
       this.nextSpawn = time + SPAWN.intervalMs;
       this.spawnNear(time);
+    }
+    const night = isNight(s.game_.clock);
+    if (night && time >= this.nextNightSpawn) {
+      this.nextNightSpawn = time + NIGHT.intervalMs;
+      this.spawnNight(time);
     }
     for (const c of [...this.list]) {
       const spr = c.sprite;
@@ -147,8 +233,23 @@ export class CreatureSystem {
       const fromHome = Math.hypot(cx - c.homeX, cy - c.homeY) / TILE;
       const playerZone = s.state.zone;
 
+      // Night creatures slink away at dawn and fade out.
+      if (c.nocturnal && !night && !c.leaving) {
+        c.leaving = true;
+        c.mode = 'wander';
+        s.tweens.add({ targets: [spr, c.bar], alpha: 0, duration: 1600, onComplete: () => this.list.includes(c) && this.remove(c) });
+      }
+
       // Decide what to do.
-      if (c.mode !== 'return') {
+      if (c.nocturnal) {
+        // Hunts you wherever you are, and never gives up while it's dark.
+        if (!c.leaving && !s.busy) c.mode = 'chase';
+        else if (s.busy && c.mode === 'chase') c.mode = 'wander';
+        if (c.mode === 'chase' && !c.growled) {
+          s.game_.sfx.growl();
+          c.growled = true;
+        }
+      } else if (c.mode !== 'return') {
         const canSee = dist < c.def.aggro && playerZone >= c.def.minZone - 1 && !s.busy;
         if (canSee) {
           if (c.mode !== 'chase' && !c.growled) {
@@ -163,7 +264,17 @@ export class CreatureSystem {
 
       if (time >= c.stunnedUntil) {
         if (c.mode === 'chase') {
-          const a = Math.atan2(p.body.center.y - cy, p.x - cx);
+          let a = Math.atan2(p.body.center.y - cy, p.x - cx);
+          // Caught on a tree or rock: step sideways for a moment, then try again.
+          const moved = Math.abs(spr.body.deltaX()) + Math.abs(spr.body.deltaY());
+          const ahead = this.builtAhead(cx, cy, a);
+          c.stuckMs = moved < 0.2 && dist > 1.2 && !ahead ? c.stuckMs + this.scene.game.loop.delta : 0;
+          if (c.stuckMs > 700 && time >= c.sidestepUntil) {
+            c.sidestepUntil = time + 600 + Math.random() * 500;
+            c.sideA = a + (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * 0.6);
+            c.stuckMs = 0;
+          }
+          if (time < c.sidestepUntil) a = c.sideA;
           spr.setVelocity(Math.cos(a) * c.def.chaseSpeed, Math.sin(a) * c.def.chaseSpeed);
         } else if (c.mode === 'return') {
           const a = Math.atan2(c.homeY - cy, c.homeX - cx);
@@ -176,6 +287,12 @@ export class CreatureSystem {
             spr.setVelocity(Math.cos(a) * c.def.wanderSpeed, Math.sin(a) * c.def.wanderSpeed);
           }
         }
+      }
+
+      // A night creature bites through whatever you've built in its way.
+      if (c.nocturnal && c.mode === 'chase' && dist >= 0.9 && time >= c.nextGnaw && time >= c.stunnedUntil) {
+        const ahead = this.builtAhead(cx, cy, Math.atan2(p.body.center.y - cy, p.x - cx));
+        if (ahead && s.damageStructure(ahead[0], ahead[1], c.def.damage)) c.nextGnaw = time + c.def.attackCooldown;
       }
 
       // Bite when touching.
