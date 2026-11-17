@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { DISPLAY_FONT, uiText } from '../ui/font';
 import { TILE } from '../config';
 import { UI } from '../art/palette';
 import { BUILD_LABEL } from '../build';
@@ -8,7 +9,6 @@ import { GameState } from '../game/state';
 import { ago, deleteSave, loadSave, type SaveData } from '../game/save';
 import { CONTROLS } from '../game/controls';
 
-const FONT = '"Pixelify Sans", "Courier New", monospace';
 const hex = (h: string) => Phaser.Display.Color.HexStringToColor(h).color;
 
 interface Option {
@@ -133,9 +133,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private text(x: number, y: number, s: string, size: number, color: string) {
-    return this.add
-      .text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: 'bold' })
-      .setResolution(Math.max(1, window.devicePixelRatio || 1));
+    return uiText(this, x, y, s, size, color);
   }
 
   private start(save: SaveData | null) {
@@ -187,7 +185,10 @@ export class TitleScene extends Phaser.Scene {
 
     this.menu.removeAll(true);
     // A little letter spacing also keeps the font from joining the f and i.
-    const title = this.text(0, 0, 'NewBaseGoofin', 64, UI.cream).setLetterSpacing(2).setOrigin(0.5).setStroke(UI.outline, 10);
+    const title = this.add
+      .text(0, 0, 'NewBaseGoofin', { fontFamily: DISPLAY_FONT, fontSize: '64px', color: UI.cream, fontStyle: 'bold' })
+      .setResolution(Math.max(1, window.devicePixelRatio || 1))
+      .setLetterSpacing(2).setOrigin(0.5).setStroke(UI.outline, 10);
     const sub = this.text(0, 46, 'A cozy survival base-builder', 18, '#f2d48a').setOrigin(0.5).setStroke(UI.outline, 5);
     this.menu.add([title, sub]);
 

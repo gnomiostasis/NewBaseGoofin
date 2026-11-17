@@ -11,7 +11,7 @@ export class BootScene extends Phaser.Scene {
     buildTextures(this);
     try {
       await Promise.race([
-        document.fonts.load('16px "Pixelify Sans"'),
+        Promise.all([document.fonts.load('16px "Jersey 10"'), document.fonts.load('bold 16px "Pixelify Sans"')]),
         new Promise((resolve) => setTimeout(resolve, 1500)),
       ]);
     } catch {
