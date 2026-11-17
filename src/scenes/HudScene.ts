@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { uiText } from '../ui/font';
 import { SURVIVAL, TILE, ZONES } from '../config';
 import { UI } from '../art/palette';
 import { BUILD_LABEL } from '../build';
@@ -11,7 +12,6 @@ import { GameState } from '../game/state';
 import { CONTROLS } from '../game/controls';
 import type { WorldScene } from './WorldScene';
 
-const FONT = '"Pixelify Sans", "Courier New", monospace';
 const hex = (h: string) => Phaser.Display.Color.HexStringToColor(h).color;
 
 const ZONE_BLURBS: Record<number, string> = {
@@ -21,7 +21,16 @@ const ZONE_BLURBS: Record<number, string> = {
   3: 'Cold and dark. Something watches from between the pines.',
 };
 
-const HINT = '[WASD] walk   [Click] use   [Right click] swing   [C] craft   [B] build   [H] controls';
+/** The always-on how-to-play card in the bottom-left corner. */
+const QUICK_CONTROLS: Array<[key: string, does: string]> = [
+  ['WASD', 'Walk  (Shift runs)'],
+  ['Left click', 'Chop, mine, pick, use'],
+  ['Right click', 'Swing your weapon'],
+  ['C', 'Craft'],
+  ['B', 'Build'],
+  ['F', 'Eat'],
+  ['H', 'All controls'],
+];
 
 /** Screen-space overlay: vitals, compass, pack, prompts, crafting, stash, minimap, banners. */
 export class HudScene extends Phaser.Scene {
@@ -34,7 +43,7 @@ export class HudScene extends Phaser.Scene {
   private banner!: Phaser.GameObjects.Container;
   private bannerTitle!: Phaser.GameObjects.Text;
   private bannerSub!: Phaser.GameObjects.Text;
-  private hint!: Phaser.GameObjects.Text;
+  private hint!: Phaser.GameObjects.Container;
   private vignette!: Phaser.GameObjects.Image;
   private hungerFlash!: Phaser.GameObjects.Rectangle;
   private mapBox!: Phaser.GameObjects.Container;
@@ -63,8 +72,6 @@ export class HudScene extends Phaser.Scene {
   private stashKey = '';
   private lastZone = -1;
   private edgeShown = false;
-  private hintTimer = 0;
-  private moved = false;
   private warnedHungry = false;
 
   constructor() {
@@ -98,7 +105,8 @@ export class HudScene extends Phaser.Scene {
     this.drawControls();
     this.hurtFlash = this.add.rectangle(0, 0, 10, 10, 0xc8302a, 1).setOrigin(0).setAlpha(0);
     this.buildMsg = this.text(0, 0, '', 15, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 4);
-    this.hint = this.text(0, 0, HINT, 15, UI.cream).setOrigin(0.5, 1).setStroke(UI.ink, 4);
+    this.hint = this.add.container(0, 0);
+    this.drawQuickControls();
 
     const kb = this.input.keyboard!;
     kb.on('keydown-M', (ev: KeyboardEvent) => !ev.repeat && this.mapBox.setVisible(!this.mapBox.visible));
@@ -178,9 +186,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private text(x: number, y: number, s: string, size: number, color: string) {
-    return this.add
-      .text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: 'bold' })
-      .setResolution(Math.max(1, window.devicePixelRatio || 1));
+    return uiText(this, x, y, s, size, color);
   }
 
   /** Wooden frame with a parchment face, like the mockup's HUD panels. */
@@ -329,7 +335,10 @@ export class HudScene extends Phaser.Scene {
       this.buildBox.add(cell);
       const frame = b.kind === 'wall' ? 'wall_0' : b.kind;
       this.buildBox.add(this.text(x + 8, 12, String(k + 1), 11, UI.wood));
-      this.buildBox.add(this.text(x + slot / 2 + 4, 13, b.name, 12, afford ? UI.ink : '#9c8566').setOrigin(0.5, 0));
+      const name = this.text(x + slot / 2 + 5, 13, b.name, 12, afford ? UI.ink : '#9c8566').setOrigin(0.5, 0);
+      // Long names like "Workbench" shrink a little so they clear the slot number.
+      if (name.width > slot - 30) name.setScale((slot - 30) / name.width);
+      this.buildBox.add(name);
       this.buildBox.add(this.add.image(x + 24, 78, 'atlas', frame).setOrigin(0.5, 1).setScale(1.5).setAlpha(afford ? 1 : 0.5));
       const costs = Object.entries(b.cost) as Array<[ItemId, number]>;
       costs.forEach(([id, n], j) => {
@@ -484,7 +493,8 @@ export class HudScene extends Phaser.Scene {
     this.buildTag?.setPosition(width - 8, height - 6);
     this.hungerFlash.setSize(width, height);
     this.banner.setPosition(width / 2, Math.round(height * 0.2));
-    this.hint.setPosition(width / 2, height - 92);
+    // Bottom-left, clear of the pack bar; hidden when the window is too narrow for both.
+    this.hint.setPosition(12, height - 12).setVisible(width >= 760);
     this.packBox.setPosition(width / 2, height - 8);
     this.prompt.setPosition(width / 2, height - 116);
     this.craftBox.setPosition(width / 2, Math.round(height * 0.28));
@@ -532,6 +542,28 @@ export class HudScene extends Phaser.Scene {
 
   /** Character sheet (L): level, XP, and the four stats with [1-4] to spend points. */
   /** A parchment card listing every control. */
+  /** Keycaps and what they do, always on screen so it's clear how to play. */
+  private drawQuickControls() {
+    const rowH = 22;
+    const keyW = 84;
+    const w = 262;
+    const h = 20 + QUICK_CONTROLS.length * rowH;
+    const g = this.add.graphics();
+    this.drawPanel(g, 0, -h, w, h);
+    this.hint.add(g);
+    QUICK_CONTROLS.forEach(([key, does], k) => {
+      const y = -h + 11 + k * rowH;
+      const label = this.text(0, 0, key, 13, UI.ink);
+      const capW = Math.max(18, label.width + 10);
+      const cap = this.add.graphics();
+      cap.fillStyle(hex(UI.wood)).fillRect(12, y, capW, rowH - 3);
+      cap.fillStyle(hex(UI.cream)).fillRect(13, y + 1, capW - 2, rowH - 6);
+      label.setPosition(12 + capW / 2, y + (rowH - 4) / 2).setOrigin(0.5);
+      this.hint.add([cap, label, this.text(12 + keyW + 6, y + (rowH - 4) / 2, does, 13, UI.wood).setOrigin(0, 0.5)]);
+    });
+    this.hint.setAlpha(0.92);
+  }
+
   private drawControls() {
     const w = 660;
     const rowH = 24;
@@ -585,7 +617,7 @@ export class HudScene extends Phaser.Scene {
     this.statsBox.add(this.text(0, h - 26, '1-4 spends a point. Gather, craft, build and fight for XP.', 11, UI.wood).setOrigin(0.5, 0));
   }
 
-  update(_time: number, delta: number) {
+  update(_time: number, _delta: number) {
     const st = this.worldScene.state;
     const w = this.worldScene.world;
 
@@ -632,12 +664,6 @@ export class HudScene extends Phaser.Scene {
       this.showBanner('The edge of the known wilds', 'Nothing but dark trees beyond. Time to head home.');
     }
 
-    // Fade the controls hint once the player has walked for a while.
-    if (!this.moved && this.worldScene.player?.body.speed > 0) this.moved = true;
-    if (this.moved) {
-      this.hintTimer += delta;
-      if (this.hintTimer > 12000) this.hint.setAlpha(Math.max(0, this.hint.alpha - delta / 800));
-    }
   }
 }
 

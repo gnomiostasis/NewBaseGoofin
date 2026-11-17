@@ -696,7 +696,7 @@ export class WorldScene extends Phaser.Scene {
     } else {
       void prop;
     }
-    this.cameras.main.shake(rule.hits > 1 ? 50 : 0, 0.0015);
+    if (rule.hits > 1) this.nudge(50, 1);
   }
 
   private storeMaterials() {
@@ -808,8 +808,14 @@ export class WorldScene extends Phaser.Scene {
     const damage = playerDamage(st.mods, st.pack.toolPower('axe'));
     if (this.creatures.hit(cx, cy, dx, dy, COMBAT.reach, damage, time) > 0) {
       this.sfx.hit();
-      this.cameras.main.shake(60, 0.003);
+      this.nudge(50, 1);
     }
+  }
+
+  /** A small camera shake of at most `px` screen pixels. Phaser scales shake by view width and zoom, so convert. */
+  private nudge(ms: number, px: number) {
+    const cam = this.cameras.main;
+    cam.shake(ms, px / (cam.width * cam.zoom));
   }
 
   hurtPlayer(damage: number, fromX: number, fromY: number, time: number) {
@@ -822,7 +828,7 @@ export class WorldScene extends Phaser.Scene {
     this.knockUntil = time + 160;
     this.player.setTintFill(0xff6a5a);
     this.time.delayedCall(110, () => this.player.clearTint());
-    this.cameras.main.shake(120, 0.006);
+    this.nudge(100, 2);
     this.sfx.hurt();
     st.events.emit('hurt', damage);
   }
