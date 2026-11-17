@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SURVIVAL, TILE, ZONES } from '../config';
 import { UI } from '../art/palette';
+import { BUILD_LABEL } from '../build';
 import { Ground, Prop } from '../world/generate';
 import { darknessAt, tintAt } from '../world/shade';
 import { BENCH_RECIPES, HAND_RECIPES, ITEMS, type ItemId, type Recipe } from '../game/items';
@@ -52,6 +53,8 @@ export class HudScene extends Phaser.Scene {
   private handOpen = false;
   private buildBox!: Phaser.GameObjects.Container;
   private buildMsg!: Phaser.GameObjects.Text;
+  /** Which build this is, quietly in the bottom-right corner. */
+  private buildTag!: Phaser.GameObjects.Text;
   private buildKey = '';
   private stashBox!: Phaser.GameObjects.Container;
   private stashKey = '';
@@ -156,6 +159,7 @@ export class HudScene extends Phaser.Scene {
       this.scale.off('resize', this.layout, this);
       this.gs.events.removeAllListeners();
     });
+    this.buildTag = this.text(0, 0, BUILD_LABEL, 11, UI.cream).setOrigin(1, 1).setAlpha(0.45).setStroke(UI.outline, 3);
     this.layout();
     if (this.registry.get('newGame') !== false)
       this.time.delayedCall(1200, () => this.toast('Gather sticks, stones and grass, then press C to craft a stone axe.'));
@@ -466,6 +470,7 @@ export class HudScene extends Phaser.Scene {
   private layout() {
     const { width, height } = this.scale;
     this.vignette.setDisplaySize(width, height);
+    this.buildTag?.setPosition(width - 8, height - 6);
     this.hungerFlash.setSize(width, height);
     this.banner.setPosition(width / 2, Math.round(height * 0.2));
     this.hint.setPosition(width / 2, height - 92);
