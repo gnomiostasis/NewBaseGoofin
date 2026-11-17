@@ -118,8 +118,8 @@ describe('defenses', () => {
     expect(isBlocked(w, x + 2, y)).toBe(true);
   });
 
-  it('fit in the build bar with a key each (1-9, then 0)', () => {
-    expect(BUILDABLES.length).toBeLessThanOrEqual(10);
+  it('fit in the build bar with a key each (1-9, 0, then -)', () => {
+    expect(BUILDABLES.length).toBeLessThanOrEqual(11);
     expect(BUILDABLES.map((b) => b.kind)).toEqual(expect.arrayContaining(['spikes', 'torch', 'turret']));
   });
 });

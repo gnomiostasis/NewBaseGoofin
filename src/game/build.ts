@@ -14,9 +14,10 @@ export enum Build {
   Spikes = 7,
   Torch = 8,
   Turret = 9,
+  Quarry = 10,
 }
 
-export type BuildKind = 'floor' | 'wall' | 'door' | 'chest' | 'bed' | 'workbench' | 'mill' | 'spikes' | 'torch' | 'turret';
+export type BuildKind = 'floor' | 'wall' | 'door' | 'chest' | 'bed' | 'workbench' | 'mill' | 'spikes' | 'torch' | 'turret' | 'quarry';
 
 export interface BuildDef {
   kind: BuildKind;
@@ -26,7 +27,7 @@ export interface BuildDef {
   blurb: string;
 }
 
-/** In build-bar order: keys 1-9 and 0 pick them. */
+/** In build-bar order: keys 1-9, 0 and - pick them. */
 export const BUILDABLES: BuildDef[] = [
   { kind: 'floor', name: 'Floor', cost: { wood: 1 }, blurb: 'Plank floor to walk on' },
   { kind: 'wall', name: 'Wall', cost: { wood: 2 }, blurb: 'Keeps things out' },
@@ -38,6 +39,7 @@ export const BUILDABLES: BuildDef[] = [
   { kind: 'spikes', name: 'Spikes', cost: { wood: 2, stone: 2 }, blurb: 'Hurts and slows creatures that cross; you can walk over it' },
   { kind: 'torch', name: 'Torch', cost: { wood: 1, fiber: 1 }, blurb: 'Lights up the night around it' },
   { kind: 'turret', name: 'Turret', cost: { wood: 8, stone: 8 }, blurb: 'Shoots creatures in range; uses stone from storage as ammo' },
+  { kind: 'quarry', name: 'Quarry', cost: { wood: 10, stone: 4, copper_ore: 2 }, blurb: 'Cuts stone from nearby rocks into a chest' },
 ];
 
 /** Spike traps and turrets: the numbers behind your defenses. */
@@ -65,6 +67,7 @@ export const BUILD_ID: Record<Exclude<BuildKind, 'floor'>, Build> = {
   spikes: Build.Spikes,
   torch: Build.Torch,
   turret: Build.Turret,
+  quarry: Build.Quarry,
 };
 
 export const KIND_OF: Record<number, BuildKind> = {
@@ -77,6 +80,7 @@ export const KIND_OF: Record<number, BuildKind> = {
   [Build.Spikes]: 'spikes',
   [Build.Torch]: 'torch',
   [Build.Turret]: 'turret',
+  [Build.Quarry]: 'quarry',
 };
 
 /** Ground cover that building simply clears away. */

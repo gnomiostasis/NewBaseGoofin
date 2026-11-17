@@ -592,6 +592,41 @@ function lumberMill(g: Ctx, frame: number) {
   px(g, 5, 19, OUTLINE);
 }
 
+function quarry(g: Ctx, frame: number) {
+  // 16 x 28: a timber A-frame over a stone block, with a drop hammer that rises and falls.
+  shadow(g, 8, 26, 8, 1.6, 0.28);
+  // Legs of the frame.
+  for (let y = 0; y < 22; y++) {
+    const off = Math.floor(y / 4);
+    px(g, 6 - off, 3 + y, OUTLINE);
+    px(g, 7 - off, 3 + y, WOOD[0]);
+    px(g, 9 + off, 3 + y, WOOD[1]);
+    px(g, 10 + off, 3 + y, OUTLINE);
+  }
+  rect(g, 4, 2, 8, 3, OUTLINE);
+  rect(g, 5, 3, 6, 1, WOOD[2]);
+  rect(g, 3, 13, 10, 2, OUTLINE);
+  rect(g, 4, 13, 8, 1, WOOD[0]);
+  // Stone block being cut, with chips around it.
+  rect(g, 2, 20, 12, 7, OUTLINE);
+  rect(g, 3, 21, 10, 5, STONE[0]);
+  rect(g, 3, 21, 10, 1, STONE[2]);
+  rect(g, 3, 25, 10, 1, STONE[1]);
+  px(g, 6, 23, STONE[1]);
+  px(g, 10, 22, STONE[1]);
+  // Rope and hammer: up, falling, down (with dust), rising.
+  const hy = [6, 10, 14, 10][frame];
+  rect(g, 8, 4, 1, hy - 4, '#d9c08c');
+  rect(g, 6, hy, 5, 4, OUTLINE);
+  rect(g, 7, hy + 1, 3, 2, STONE[3]);
+  px(g, 7, hy + 1, STONE[1]);
+  if (frame === 2) {
+    px(g, 1, 19, STONE[2]);
+    px(g, 14, 18, STONE[2]);
+    px(g, 2, 17, STONE[0]);
+  }
+}
+
 function iconCopperAxe(g: Ctx) {
   for (let i = 0; i < 10; i++) {
     px(g, 3 + i, 13 - i, OUTLINE);
@@ -1042,6 +1077,8 @@ export function buildTextures(scene: Phaser.Scene) {
   atlas.add('bed', 16, 24, bed);
   atlas.add('workbench', 16, 20, workbench);
   atlas.add('mill', 16, 28, (g) => lumberMill(g, 0));
+  atlas.add('quarry', 16, 28, (g) => quarry(g, 0));
+  for (let f = 1; f < 4; f++) atlas.add(`quarry_${f}`, 16, 28, (g) => quarry(g, f));
   atlas.add('spikes', 16, 16, spikes);
   atlas.add('torch', 8, 18, (g) => torch(g, 0));
   atlas.add('torch_1', 8, 18, (g) => torch(g, 1));

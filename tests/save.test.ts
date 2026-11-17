@@ -15,6 +15,7 @@ const freshState = (): Saveable => ({
   respawn: null,
   lostPacks: [],
   mills: new Map<number, MillState>(),
+  quarries: new Map<number, MillState>(),
 });
 
 describe('saving', () => {
@@ -49,6 +50,7 @@ describe('saving', () => {
     a.respawn = [10, 12];
     a.lostPacks.push({ tx: 3, ty: 4, items: [['berries', 2]] });
     a.mills.set(99, { work: 1200, made: 7 });
+    a.quarries.set(120, { work: 50, made: 3 });
 
     const b = freshState();
     restoreState(b, JSON.parse(JSON.stringify(captureState(a))) as SaveData);
@@ -61,6 +63,7 @@ describe('saving', () => {
     expect(b.respawn).toEqual([10, 12]);
     expect(b.lostPacks).toEqual(a.lostPacks);
     expect(b.mills.get(99)).toEqual({ work: 1200, made: 7 });
+    expect(b.quarries.get(120)).toEqual({ work: 50, made: 3 });
   });
 
   it('a full pack still loads in full before carry bonuses come back', () => {
