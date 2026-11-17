@@ -80,6 +80,8 @@ export class WorldScene extends Phaser.Scene {
     Phaser.Input.Keyboard.Key
   >;
   private facing: Dir = 'down';
+  /** Set while (and after) moving diagonally, so the sprite shows a three-quarter view. */
+  private diagonal: { up: boolean; left: boolean } | null = null;
   private collideLayer!: Phaser.Tilemaps.TilemapLayer;
   get collisionLayer() {
     return this.collideLayer;
@@ -547,6 +549,7 @@ export class WorldScene extends Phaser.Scene {
     const dy = ty * TILE + 8 - this.player.body.center.y;
     if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
     this.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down';
+    this.diagonal = null;
   }
 
   private targetAt(tx: number, ty: number): Target | null {
@@ -1107,9 +1110,12 @@ export class WorldScene extends Phaser.Scene {
         if (!fits) this.facing = vx < 0 ? 'left' : 'right';
       } else if (vx !== 0) this.facing = vx < 0 ? 'left' : 'right';
       else this.facing = vy < 0 ? 'up' : 'down';
+      // Running diagonally shows a three-quarter view, which stays when you stop.
+      this.diagonal = vx !== 0 && vy !== 0 ? { up: vy < 0, left: vx < 0 } : null;
     }
-    const animDir = this.facing === 'left' ? 'right' : this.facing;
-    this.player.setFlipX(this.facing === 'left');
+    const d = this.diagonal;
+    const animDir = d ? (d.up ? 'upright' : 'downright') : this.facing === 'left' ? 'right' : this.facing;
+    this.player.setFlipX(d ? d.left : this.facing === 'left');
     if (moving) {
       this.player.anims.play(`walk_${animDir}`, true);
       this.player.anims.timeScale = sprinting ? 1.5 : 1;
