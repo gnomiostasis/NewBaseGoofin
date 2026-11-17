@@ -1084,7 +1084,10 @@ export class WorldScene extends Phaser.Scene {
   private setupCamera() {
     const cam = this.cameras.main;
     cam.setBounds(0, 0, this.world.width * TILE, this.world.height * TILE);
-    cam.startFollow(this.player, true, 0.15, 0.15);
+    // Don't snap the camera to whole world pixels: at 3-4x zoom that moves the view in 3-4 screen-pixel
+    // jumps that fall on different frames for x and y, which made diagonal walking stutter. The renderer's
+    // roundPixels still snaps every sprite and tile to whole screen pixels, so the art stays crisp.
+    cam.startFollow(this.player, false, 0.15, 0.15);
     this.fitZoom();
   }
 
