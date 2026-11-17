@@ -854,21 +854,48 @@ const LEGS_SIDE_STAND = ['...oppppo...', '...oppppo...', '...oppppo...', '...obb
 const LEGS_SIDE_A = ['...oppppo...', '..opppoppo..', '.oppo..oppo.', '.obbo..obbbo', '.oooo..ooooo'];
 const LEGS_SIDE_B = ['...oppppo...', '...oppppo...', '..oppppo....', '..obbbbo....', '..oooooo....'];
 
+// Three-quarter views for moving diagonally: face turned to the right, or back turned to the right.
+const HEAD_DOWNRIGHT = [
+  '....oooo....',
+  '..ooHHHHoo..',
+  '.oHHHHHHHHo.',
+  '.ohHHsssssso',
+  '.ohHsessseso',
+  '.ohhssssssso',
+  '..ohssssssoo',
+];
+const BODY_DOWNRIGHT = ['..okcCCcco..', '.okkcCCccco.', 'oskkcCCcccso', 'oskcccccccso'];
+const HEAD_UPRIGHT = [
+  '....oooo....',
+  '..ooHHHHoo..',
+  '.oHHHHHHHHo.',
+  '.ohHHHHHHHso',
+  '.ohHHHHHHsso',
+  '.ohhHHHHhso.',
+  '..ohhhhhhoo.',
+];
+const BODY_UPRIGHT = ['..okkkcCco..', '.okkkkkcCco.', 'oskKKkkcccso', 'osckkkkcccso'];
+const LEGS_DIAG_A = ['.oppppppppo.', '.opppoopppo.', '..obbo.oppo.', '..oooo.obbo.', '........oooo'];
+const LEGS_DIAG_B = ['.oppppppppo.', '.opppoopppo.', '.oppo..obbo.', '.obbo...ooo.', '.oooo.......'];
+
 const PLAYER_PAL = { ...PLAYER_COLORS, k: '#8a5a36', K: '#a87448' };
 
 /** Directions in frame order. Left reuses the right-facing frames, flipped. */
-export const PLAYER_DIRS = ['down', 'up', 'right'] as const;
+export const PLAYER_DIRS = ['down', 'up', 'right', 'downright', 'upright'] as const;
 
 function playerFrame(g: Ctx, dir: (typeof PLAYER_DIRS)[number], step: number) {
   const bob = step % 2 === 1 ? 1 : 0;
   const ox = 2;
   shadow(g, 8, 15, 5, 1, 0.3);
+  const diagonal = dir === 'downright' || dir === 'upright';
   const legs =
     dir === 'right'
       ? [LEGS_SIDE_STAND, LEGS_SIDE_A, LEGS_SIDE_STAND, LEGS_SIDE_B][step]
-      : [LEGS_STAND, LEGS_A, LEGS_STAND, LEGS_B][step];
-  const head = dir === 'down' ? HEAD_DOWN : dir === 'up' ? HEAD_UP : HEAD_SIDE;
-  const body = dir === 'down' ? BODY_DOWN : dir === 'up' ? BODY_UP : BODY_SIDE;
+      : diagonal
+        ? [LEGS_STAND, LEGS_DIAG_A, LEGS_STAND, LEGS_DIAG_B][step]
+        : [LEGS_STAND, LEGS_A, LEGS_STAND, LEGS_B][step];
+  const head = { down: HEAD_DOWN, up: HEAD_UP, right: HEAD_SIDE, downright: HEAD_DOWNRIGHT, upright: HEAD_UPRIGHT }[dir];
+  const body = { down: BODY_DOWN, up: BODY_UP, right: BODY_SIDE, downright: BODY_DOWNRIGHT, upright: BODY_UPRIGHT }[dir];
   sprite(g, ox, 11, legs, PLAYER_PAL);
   sprite(g, ox, 7 - bob, body, PLAYER_PAL);
   sprite(g, ox, 0 - bob, head, PLAYER_PAL);
