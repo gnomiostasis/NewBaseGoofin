@@ -41,6 +41,8 @@ export class GameState {
   lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }> = [];
   /** Lumber mills by tile index. */
   readonly mills = new Map<number, MillState>();
+  /** Quarries by tile index. */
+  readonly quarries = new Map<number, MillState>();
   /** Milliseconds of play since the run began; drives the day and night cycle. */
   clock = 0;
   readonly events = new Phaser.Events.EventEmitter();

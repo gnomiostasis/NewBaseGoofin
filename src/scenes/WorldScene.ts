@@ -5,7 +5,7 @@ import { CreatureSystem } from './CreatureSystem';
 import { COMBAT, NIGHT, playerDamage } from '../game/creatures';
 import { dayNumber, isNight, nextMorning } from '../game/daynight';
 import { LEVELING } from '../game/stats';
-import { describeMill, millStatus, tickMill } from '../game/mill';
+import { MILL, QUARRY, describeMill, millStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
 import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
@@ -229,17 +229,22 @@ export class WorldScene extends Phaser.Scene {
     }
     for (const [i, msLeft, prop] of d.regrow) this.regrow.push({ i, at: this.time.now + msLeft, prop: prop as Prop });
     this.renderLostPacks();
-    // The mills kept sawing while you were away.
+    // Mills and quarries kept working while you were away.
     const away = Math.min(OFFLINE_CAP_MS, Math.max(0, Date.now() - d.savedAt));
-    let made = 0;
-    for (const [i, m] of st.mills) {
-      const x = i % w.width;
-      const y = (i - x) / w.width;
-      const n = tickMill(m, millStatus(w, x, y, st.stash.count('wood')), away, st.stash.count('wood'));
-      st.stash.add('wood', n);
-      made += n;
+    const parts: string[] = [];
+    for (const [map, def, what] of this.producers()) {
+      let made = 0;
+      for (const [i, m] of map) {
+        const x = i % w.width;
+        const y = (i - x) / w.width;
+        const have = st.stash.count(def.item);
+        const n = tickMill(m, millStatus(w, x, y, have, def), away, have, def);
+        st.stash.add(def.item, n);
+        made += n;
+      }
+      if (made > 0) parts.push(`your ${what} made ${made} ${def.itemName}`);
     }
-    if (made > 0) this.time.delayedCall(1500, () => st.emit('toast', `While you were away, your mills made ${made} wood.`));
+    if (parts.length) this.time.delayedCall(1500, () => st.emit('toast', `While you were away, ${parts.join(' and ')}.`));
   }
   private buildObjects = new Map<number, Phaser.GameObjects.Image[]>();
   private ghost!: Phaser.GameObjects.Image;
@@ -585,7 +590,7 @@ export class WorldScene extends Phaser.Scene {
     const lost = this.game_.lostPacks.findIndex((l) => l.tx === tx && l.ty === ty);
     if (lost >= 0) return { kind: 'lostpack', tx, ty, k: lost };
     const b = w.build[i];
-    if (b === Build.Chest || b === Build.Bed || b === Build.Workbench || b === Build.Mill) return { kind: 'build', tx, ty, what: KIND_OF[b] };
+    if (b === Build.Chest || b === Build.Bed || b === Build.Workbench || b === Build.Mill || b === Build.Quarry) return { kind: 'build', tx, ty, what: KIND_OF[b] };
     const camp = this.campAt.get(i);
     if (camp && (camp === 'crate' || camp === 'bedroll' || camp === 'tent' || camp === 'sack')) {
       return { kind: 'camp', tx, ty, what: camp };
@@ -604,7 +609,7 @@ export class WorldScene extends Phaser.Scene {
     if (t.kind === 'build') {
       if (t.what === 'chest') return ['Store materials in chest', false];
       if (t.what === 'bed') return ['Sleep (you will wake here)', false];
-      if (t.what === 'mill') return [this.millText(t.tx, t.ty), false];
+      if (t.what === 'mill' || t.what === 'quarry') return [this.millText(t.tx, t.ty), false];
       return ['Use workbench', false];
     }
     if (t.kind === 'camp') {
@@ -629,7 +634,7 @@ export class WorldScene extends Phaser.Scene {
     if (t.kind === 'build') {
       this.nextSwing = time + 400;
       if (t.what === 'chest') this.storeMaterials();
-      else if (t.what === 'mill') st.emit('toast', this.millText(t.tx, t.ty));
+      else if (t.what === 'mill' || t.what === 'quarry') st.emit('toast', this.millText(t.tx, t.ty));
       else if (t.what === 'bed') {
         st.respawn = [t.tx, t.ty];
         this.rest(true);
@@ -1005,6 +1010,7 @@ export class WorldScene extends Phaser.Scene {
     if (def.kind === 'door') this.setDoor(i, true);
     this.attachDefense(i);
     if (def.kind === 'mill') st.mills.set(i, { work: 0, made: 0 });
+    if (def.kind === 'quarry') st.quarries.set(i, { work: 0, made: 0 });
     if (isBlocked(w, x, y)) this.collideLayer.putTileAt(T_BLOCK, x, y);
     this.renderBuild(x, y);
     this.refreshAround(x, y);
@@ -1029,6 +1035,7 @@ export class WorldScene extends Phaser.Scene {
       this.setDoor(i, false);
       this.detachDefense(i);
       st.mills.delete(i);
+      st.quarries.delete(i);
       this.structureHp.delete(i);
     } else if (w.floor[i]) {
       kind = 'floor';
@@ -1228,30 +1235,45 @@ export class WorldScene extends Phaser.Scene {
     this.night.update(st.clock, time);
   }
 
-  private millText(x: number, y: number): string {
+  /** Mills and quarries, each with its definition and a name for the welcome-back toast. */
+  private producers(): Array<[Map<number, MillState>, ProducerDef, string]> {
     const st = this.game_;
-    const m = st.mills.get(idx(this.world, x, y));
-    return describeMill(millStatus(this.world, x, y, st.stash.count('wood')), m?.made ?? 0);
+    return [
+      [st.mills, MILL, 'mills'],
+      [st.quarries, QUARRY, 'quarries'],
+    ];
   }
 
-  /** Mills keep sawing wherever you are; the saw spins while one is working. */
+  private millText(x: number, y: number): string {
+    const st = this.game_;
+    const i = idx(this.world, x, y);
+    const def = this.world.build[i] === Build.Quarry ? QUARRY : MILL;
+    const m = (def === QUARRY ? st.quarries : st.mills).get(i);
+    return describeMill(millStatus(this.world, x, y, st.stash.count(def.item), def), m?.made ?? 0, def);
+  }
+
+  /** Mills and quarries keep working wherever you are; they animate while they work. */
   private updateMills(time: number, delta: number) {
     const st = this.game_;
     const w = this.world;
     const view = this.cameras.main.worldView;
-    for (const [i, m] of st.mills) {
-      const x = i % w.width;
-      const y = (i - x) / w.width;
-      const status = millStatus(w, x, y, st.stash.count('wood'));
-      const made = tickMill(m, status, delta, st.stash.count('wood'));
-      if (made > 0 && status.ok) {
-        st.stash.add('wood', made);
-        const cx = (status.chest % w.width) * TILE + 8;
-        const cy = Math.floor(status.chest / w.width) * TILE;
-        if (view.contains(cx, cy)) st.emit('gained', cx, cy, [['wood', made]]);
+    for (const [map, def] of this.producers()) {
+      const base = def === QUARRY ? 'quarry' : 'mill';
+      const speed = def === QUARRY ? 110 : 70;
+      for (const [i, m] of map) {
+        const x = i % w.width;
+        const y = (i - x) / w.width;
+        const status = millStatus(w, x, y, st.stash.count(def.item), def);
+        const made = tickMill(m, status, delta, st.stash.count(def.item), def);
+        if (made > 0 && status.ok) {
+          st.stash.add(def.item, made);
+          const cx = (status.chest % w.width) * TILE + 8;
+          const cy = Math.floor(status.chest / w.width) * TILE;
+          if (view.contains(cx, cy)) st.emit('gained', cx, cy, [[def.item, made]]);
+        }
+        const img = this.buildObjects.get(i)?.find((o) => o.frame.name.startsWith(base));
+        if (img) img.setFrame(status.ok ? [base, `${base}_1`, `${base}_2`, `${base}_3`][Math.floor(time / speed) % 4] : base);
       }
-      const img = this.buildObjects.get(i)?.find((o) => o.frame.name.startsWith('mill'));
-      if (img) img.setFrame(status.ok ? (['mill', 'mill_1', 'mill_2', 'mill_3'][Math.floor(time / 70) % 4]) : 'mill');
     }
   }
 

@@ -1,50 +1,85 @@
-// The lumber mill: the first thing that works while you're away.
-// It saws wood from the standing trees around it and puts it in a nearby chest.
+// Producers: buildings that work while you're away and put what they make in a nearby chest.
+// The lumber mill saws wood from the standing trees around it; the quarry cuts stone from
+// the rocks around it. Neither uses up its trees or rocks.
 
 import { Prop, idx, inBounds, type World } from '../world/generate';
 import { Build } from './build';
+import type { ItemId } from './items';
 
-export const MILL = {
-  /** Trees within this many tiles (in every direction) feed the mill. */
-  treeRadius: 3,
-  /** More trees than this don't make it any faster. */
-  maxTrees: 6,
-  /** With one tree it takes this long to make one wood; each extra tree shares the work. */
-  msPerWoodOneTree: 48_000,
-  /** A chest must be within this many tiles to take the wood. */
+export interface ProducerDef {
+  name: string;
+  /** The prop it works from, and what it makes. */
+  source: Prop;
+  sourceName: [one: string, many: string];
+  item: ItemId;
+  itemName: string;
+  /** Sources within this many tiles (in every direction) count. */
+  radius: number;
+  /** More sources than this don't make it any faster. */
+  maxSources: number;
+  /** With one source it takes this long to make one item; each extra source shares the work. */
+  msPerItemOneSource: number;
+  /** A chest must be within this many tiles to take what it makes. */
+  chestRadius: number;
+  /** It stops when storage holds this much of its item. */
+  cap: number;
+}
+
+export const MILL: ProducerDef = {
+  name: 'Lumber mill',
+  source: Prop.Tree,
+  sourceName: ['tree', 'trees'],
+  item: 'wood',
+  itemName: 'wood',
+  radius: 3,
+  maxSources: 6,
+  msPerItemOneSource: 48_000,
   chestRadius: 3,
-  /** Mills stop when storage holds this much wood. */
-  woodCap: 150,
+  cap: 150,
+};
+
+export const QUARRY: ProducerDef = {
+  name: 'Quarry',
+  source: Prop.Rock,
+  sourceName: ['rock', 'rocks'],
+  item: 'stone',
+  itemName: 'stone',
+  radius: 3,
+  maxSources: 4,
+  msPerItemOneSource: 60_000,
+  chestRadius: 3,
+  cap: 200,
 };
 
 export interface MillState {
-  /** Milliseconds of work towards the next wood. */
+  /** Milliseconds of work towards the next item. */
   work: number;
-  /** Wood made since it was built. */
+  /** Items made since it was built. */
   made: number;
 }
 
 export type MillStatus =
-  | { ok: true; trees: number; msPerWood: number; chest: number }
-  | { ok: false; reason: 'no-trees' | 'no-chest' | 'full'; trees: number };
+  | { ok: true; sources: number; msPerItem: number; chest: number }
+  | { ok: false; reason: 'no-source' | 'no-chest' | 'full'; sources: number };
 
-/** Standing trees around tile (x, y). */
-export function treesNear(w: World, x: number, y: number): number {
+/** Sources (trees for a mill, rocks for a quarry) around tile (x, y). */
+export function sourcesNear(w: World, x: number, y: number, def: ProducerDef = MILL): number {
   let n = 0;
-  const r = MILL.treeRadius;
+  const r = def.radius;
   for (let dy = -r; dy <= r; dy++) {
     for (let dx = -r; dx <= r; dx++) {
-      if (inBounds(w, x + dx, y + dy) && w.prop[idx(w, x + dx, y + dy)] === Prop.Tree) n++;
+      if (inBounds(w, x + dx, y + dy) && w.prop[idx(w, x + dx, y + dy)] === def.source) n++;
     }
   }
   return n;
 }
 
+export const treesNear = (w: World, x: number, y: number) => sourcesNear(w, x, y, MILL);
+
 /** The closest chest to tile (x, y) within reach, as a tile index, or -1. */
-export function chestNear(w: World, x: number, y: number): number {
+export function chestNear(w: World, x: number, y: number, r = MILL.chestRadius): number {
   let best = -1;
   let bestD = Infinity;
-  const r = MILL.chestRadius;
   for (let dy = -r; dy <= r; dy++) {
     for (let dx = -r; dx <= r; dx++) {
       if (!inBounds(w, x + dx, y + dy)) continue;
@@ -59,40 +94,41 @@ export function chestNear(w: World, x: number, y: number): number {
   return best;
 }
 
-export function msPerWood(trees: number): number {
-  return MILL.msPerWoodOneTree / Math.min(trees, MILL.maxTrees);
+export function msPerItem(sources: number, def: ProducerDef = MILL): number {
+  return def.msPerItemOneSource / Math.min(sources, def.maxSources);
 }
 
-export function millStatus(w: World, x: number, y: number, storedWood: number): MillStatus {
-  const trees = treesNear(w, x, y);
-  if (trees === 0) return { ok: false, reason: 'no-trees', trees };
-  const chest = chestNear(w, x, y);
-  if (chest < 0) return { ok: false, reason: 'no-chest', trees };
-  if (storedWood >= MILL.woodCap) return { ok: false, reason: 'full', trees };
-  return { ok: true, trees, msPerWood: msPerWood(trees), chest };
+export function millStatus(w: World, x: number, y: number, stored: number, def: ProducerDef = MILL): MillStatus {
+  const sources = sourcesNear(w, x, y, def);
+  if (sources === 0) return { ok: false, reason: 'no-source', sources };
+  const chest = chestNear(w, x, y, def.chestRadius);
+  if (chest < 0) return { ok: false, reason: 'no-chest', sources };
+  if (stored >= def.cap) return { ok: false, reason: 'full', sources };
+  return { ok: true, sources, msPerItem: msPerItem(sources, def), chest };
 }
 
-/** Advances a mill by `dt` ms. Returns how much wood it made (never past the cap). */
-export function tickMill(m: MillState, status: MillStatus, dt: number, storedWood: number): number {
+/** Advances a producer by `dt` ms. Returns how much it made (never past the cap). */
+export function tickMill(m: MillState, status: MillStatus, dt: number, stored: number, def: ProducerDef = MILL): number {
   if (!status.ok) {
     m.work = 0;
     return 0;
   }
   m.work += dt;
-  let made = Math.floor(m.work / status.msPerWood);
-  m.work -= made * status.msPerWood;
-  made = Math.min(made, MILL.woodCap - storedWood);
+  let made = Math.floor(m.work / status.msPerItem);
+  m.work -= made * status.msPerItem;
+  made = Math.min(made, def.cap - stored);
   m.made += made;
   return made;
 }
 
-export function describeMill(s: MillStatus, made: number): string {
+export function describeMill(s: MillStatus, made: number, def: ProducerDef = MILL): string {
+  const [one, many] = def.sourceName;
   if (!s.ok) {
-    if (s.reason === 'no-trees') return 'Lumber mill: no trees nearby to saw';
-    if (s.reason === 'no-chest') return 'Lumber mill: needs a chest within 3 tiles';
-    return `Lumber mill: storage is full of wood (${MILL.woodCap})`;
+    if (s.reason === 'no-source') return `${def.name}: no ${many} nearby to work`;
+    if (s.reason === 'no-chest') return `${def.name}: needs a chest within ${def.chestRadius} tiles`;
+    return `${def.name}: storage is full of ${def.itemName} (${def.cap})`;
   }
-  const secs = Math.round(s.msPerWood / 1000);
-  const trees = s.trees >= MILL.maxTrees ? `${MILL.maxTrees}+ trees (full speed)` : `${s.trees} tree${s.trees === 1 ? '' : 's'}`;
-  return `Lumber mill: ${trees}, 1 wood every ${secs}s · ${made} made`;
+  const secs = Math.round(s.msPerItem / 1000);
+  const n = s.sources >= def.maxSources ? `${def.maxSources}+ ${many} (full speed)` : `${s.sources} ${s.sources === 1 ? one : many}`;
+  return `${def.name}: ${n}, 1 ${def.itemName} every ${secs}s · ${made} made`;
 }

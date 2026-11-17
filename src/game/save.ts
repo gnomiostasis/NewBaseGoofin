@@ -31,6 +31,8 @@ export interface SaveData {
   respawn: [number, number] | null;
   lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }>;
   mills: Array<[number, MillState]>;
+  /** Older saves have none. */
+  quarries?: Array<[number, MillState]>;
   /** Bushes growing back: [tile index, ms left, prop]. */
   regrow: Array<[number, number, number]>;
   /** Time of day (see daynight.ts). Older saves have none and start in the morning. */
@@ -46,6 +48,7 @@ export interface Saveable {
   respawn: [number, number] | null;
   lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }>;
   mills: Map<number, MillState>;
+  quarries: Map<number, MillState>;
 }
 
 export function worldChanges(w: World, baseProps: Uint8Array): Pick<SaveData, 'props' | 'builds' | 'floors'> {
@@ -68,7 +71,7 @@ export function applyWorldChanges(w: World, d: Pick<SaveData, 'props' | 'builds'
   for (const i of d.floors) if (i >= 0 && i < n) w.floor[i] = 1;
 }
 
-export function captureState(s: Saveable): Pick<SaveData, 'pack' | 'stash' | 'vitals' | 'progress' | 'respawn' | 'lostPacks' | 'mills'> {
+export function captureState(s: Saveable): Pick<SaveData, 'pack' | 'stash' | 'vitals' | 'progress' | 'respawn' | 'lostPacks' | 'mills' | 'quarries'> {
   const p = s.progress;
   return {
     pack: s.pack.entries(),
@@ -78,6 +81,7 @@ export function captureState(s: Saveable): Pick<SaveData, 'pack' | 'stash' | 'vi
     respawn: s.respawn ? [s.respawn[0], s.respawn[1]] : null,
     lostPacks: s.lostPacks.map((l) => ({ tx: l.tx, ty: l.ty, items: l.items.map(([id, n]) => [id, n] as [ItemId, number]) })),
     mills: [...s.mills].map(([i, m]) => [i, { ...m }]),
+    quarries: [...s.quarries].map(([i, m]) => [i, { ...m }]),
   };
 }
 
@@ -97,6 +101,8 @@ export function restoreState(s: Saveable, d: SaveData) {
   s.lostPacks = d.lostPacks.map((l) => ({ ...l, items: [...l.items] }));
   s.mills.clear();
   for (const [i, m] of d.mills) s.mills.set(i, { ...m });
+  s.quarries.clear();
+  for (const [i, m] of d.quarries ?? []) s.quarries.set(i, { ...m });
 }
 
 /** Parses a stored save, or returns null if it's missing, broken or from another version. */
