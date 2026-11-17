@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TILE } from '../config';
 import { UI } from '../art/palette';
+import { BUILD_LABEL } from '../build';
 import { GRASS_VARIANTS, TREE_FRAMES } from '../art/textures';
 import { hash2 } from '../world/rng';
 import { GameState } from '../game/state';
@@ -24,6 +25,7 @@ export class TitleScene extends Phaser.Scene {
   private uiCam!: Phaser.Cameras.Scene2D.Camera;
   private menu!: Phaser.GameObjects.Container;
   private diorama: Phaser.GameObjects.GameObject[] = [];
+  private buildTag!: Phaser.GameObjects.Text;
 
   constructor() {
     super('title');
@@ -40,6 +42,8 @@ export class TitleScene extends Phaser.Scene {
     this.menu = this.add.container(0, 0);
     this.cameras.main.ignore(this.menu);
     this.buildMenu();
+    this.buildTag = this.text(0, 0, BUILD_LABEL, 11, UI.cream).setOrigin(1, 1).setAlpha(0.45).setStroke(UI.outline, 3);
+    this.cameras.main.ignore(this.buildTag);
 
     const kb = this.input.keyboard!;
     const move = (d: number) => {
@@ -223,6 +227,7 @@ export class TitleScene extends Phaser.Scene {
     // Keep the camp in the lower part of the screen, under the menu.
     cam.centerOn(4, 20 - (0.3 * height) / cam.zoom);
     this.uiCam.setSize(width, height);
+    this.buildTag.setPosition(width - 8, height - 6);
     this.menu.setPosition(width / 2, Math.max(70, height * 0.16));
   }
 }
