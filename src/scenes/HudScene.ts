@@ -27,8 +27,7 @@ const QUICK_CONTROLS: Array<[key: string, does: string]> = [
   ['WASD', 'Walk  (Shift runs)'],
   ['Left click', 'Chop, mine, pick, use'],
   ['Right click', 'Swing your weapon'],
-  ['C', 'Craft'],
-  ['B', 'Build'],
+  ['B or C', 'Build & craft menu'],
   ['F', 'Eat'],
   ['H', 'All controls'],
 ];
@@ -57,7 +56,7 @@ export class HudScene extends Phaser.Scene {
   private prompt!: Phaser.GameObjects.Text;
   private toasts: Phaser.GameObjects.Text[] = [];
   private craftBox!: Phaser.GameObjects.Container;
-  private craftKey = '';
+  private menuKey = '';
   private levelText!: Phaser.GameObjects.Text;
   private statsOpen = false;
   private statsKey = '';
@@ -65,7 +64,6 @@ export class HudScene extends Phaser.Scene {
   /** The controls panel (H). */
   private controlsBox!: Phaser.GameObjects.Container;
   private hurtFlash!: Phaser.GameObjects.Rectangle;
-  private handOpen = false;
   private buildBox!: Phaser.GameObjects.Container;
   private buildMsg!: Phaser.GameObjects.Text;
   /** Which build this is, quietly in the bottom-right corner. */
@@ -114,17 +112,14 @@ export class HudScene extends Phaser.Scene {
 
     const kb = this.input.keyboard!;
     kb.on('keydown-M', (ev: KeyboardEvent) => !ev.repeat && this.mapBox.setVisible(!this.mapBox.visible));
-    kb.on('keydown-C', (ev: KeyboardEvent) => {
-      if (ev.repeat) return;
-      this.handOpen = !this.handOpen;
-      this.gs.bench = null;
-      if (this.handOpen) this.gs.buildMode = false;
-    });
-    kb.on('keydown-B', () => (this.handOpen = false));
+    const toggleMenu = (ev: KeyboardEvent) => {
+      if (!ev.repeat) this.gs.setMenu(!this.gs.menuOpen);
+    };
+    kb.on('keydown-B', toggleMenu);
+    kb.on('keydown-C', toggleMenu);
     kb.on('keydown-ESC', () => {
-      this.handOpen = false;
-      this.gs.bench = null;
-      this.gs.buildMode = false;
+      this.gs.setMenu(false);
+      this.gs.stopPlacing();
     });
     kb.on('keydown', (ev: KeyboardEvent) => {
       const n = ev.key === '0' ? 10 : ev.key === '-' ? 11 : Number(ev.key);
@@ -132,15 +127,12 @@ export class HudScene extends Phaser.Scene {
       if (this.statsOpen) {
         if (n <= STAT_ORDER.length && this.gs.progress.spend(STAT_ORDER[n - 1])) {
           this.gs.sfx.craft();
-    this.gs.addXp(LEVELING.xp.craft);
           this.statsKey = '';
         }
         return;
       }
-      const recipes = this.openRecipes();
-      if (recipes) {
-        if (n <= recipes.length) this.craft(recipes[n - 1], this.gs.bench !== null);
-      } else if (this.gs.buildMode && n <= BUILDABLES.length) this.gs.buildSel = n - 1;
+      // In the menu or while placing, number keys pick what to build.
+      if ((this.gs.menuOpen || this.gs.buildMode) && n <= BUILDABLES.length) this.pickBuild(n - 1);
     });
 
     kb.on('keydown-L', (ev: KeyboardEvent) => {
@@ -278,17 +270,20 @@ export class HudScene extends Phaser.Scene {
     });
   }
 
-  /** The recipe list on screen right now: workbench, hand crafting, or none. */
-  private openRecipes(): Recipe[] | null {
-    if (this.gs.bench) return BENCH_RECIPES;
-    if (this.handOpen) return HAND_RECIPES;
-    return null;
+  /** Every recipe, with whether it needs a workbench nearby. */
+  private recipes(): Array<[Recipe, boolean]> {
+    return [...HAND_RECIPES.map((r) => [r, false] as [Recipe, boolean]), ...BENCH_RECIPES.map((r) => [r, true] as [Recipe, boolean])];
   }
 
-  /** At the workbench, ingredients can also come from nearby storage. */
-  private craft(r: Recipe, atBench: boolean) {
-    const pack = this.gs.pack;
-    const storage = atBench ? this.gs.storage : null;
+  /** Crafting takes from your pack first, then from storage, like building. */
+  private craft(r: Recipe, needsBench: boolean) {
+    const gs = this.gs;
+    const pack = gs.pack;
+    if (needsBench && !gs.nearBench) {
+      this.toast('Stand near a workbench to craft that.');
+      gs.sfx.thud();
+      return;
+    }
     if (pack.has(r.makes)) {
       this.toast(`You already have a ${ITEMS[r.makes].name.toLowerCase()}.`);
       return;
@@ -297,66 +292,74 @@ export class HudScene extends Phaser.Scene {
       this.toast('No room in your pack.');
       return;
     }
-    if (!payCost(r.needs, pack, storage)) {
-      this.toast(atBench ? 'Missing materials (pack or nearby storage).' : 'Missing materials. They need to be in your pack.');
-      this.gs.sfx.thud();
+    if (!payCost(r.needs, pack, gs.stash)) {
+      this.toast('Missing materials (pack or storage).');
+      gs.sfx.thud();
       return;
     }
     pack.add(r.makes);
-    this.gs.sfx.craft();
+    gs.sfx.craft();
+    gs.addXp(LEVELING.xp.craft);
+    this.menuKey = '';
     const extra = ITEMS[r.makes].capacity ? ` Your pack holds ${pack.capacity} now.` : '';
     this.toast(`Crafted a ${ITEMS[r.makes].name.toLowerCase()}!${extra}`);
   }
 
-  /** Top-centre bar in build mode: every buildable, their costs, and what's affordable. */
+  /** Close the menu and start placing buildable `k`. */
+  private pickBuild(k: number) {
+    const gs = this.gs;
+    gs.setMenu(false);
+    gs.buildSel = k;
+    gs.demolish = false;
+    gs.buildMode = true;
+  }
+
+  private pickDemolish() {
+    const gs = this.gs;
+    gs.setMenu(false);
+    gs.demolish = true;
+    gs.buildMode = true;
+  }
+
+  /** While placing: a small card up top with what you're placing, its cost, and how to cancel. */
   private redrawBuild() {
     const gs = this.gs;
     this.buildBox.setVisible(gs.buildMode);
-    this.buildMsg.setVisible(gs.buildMode);
+    this.buildMsg.setVisible(gs.buildMode && gs.buildMsg !== null);
     if (!gs.buildMode) {
       this.buildKey = '';
       return;
     }
+    this.buildMsg.setText(gs.buildMsg ?? '');
     const have = (id: ItemId) => gs.pack.count(id) + gs.stash.count(id);
-    const key = `${gs.buildSel}|${this.scale.width}|${(['wood', 'stone', 'fiber', 'copper_ore'] as ItemId[]).map(have).join()}`;
-    this.buildMsg.setText(
-      gs.buildMsg ??
-        `[Left click] build   [Right click] remove   [1-0, -] choose   [B] done   ·   uses your pack, then storage`,
-    );
-    this.buildMsg.setColor(gs.buildMsg ? '#f0b8a0' : UI.cream);
+    const def = BUILDABLES[gs.buildSel];
+    const key = gs.demolish ? 'demolish' : `${gs.buildSel}|${Object.keys(def.cost).map((id) => have(id as ItemId)).join()}`;
     if (key === this.buildKey) return;
     this.buildKey = key;
     this.buildBox.removeAll(true);
-    // Slots narrow on smaller windows so the bar fits between the vitals panel and the minimap.
-    const slot = Phaser.Math.Clamp(Math.floor((this.scale.width - 576) / BUILDABLES.length), 64, 84);
-    const wide = slot >= 80;
-    const w = BUILDABLES.length * slot + 16;
-    const h = 92;
+    const w = 500;
+    const h = 66;
     const g = this.add.graphics();
     this.drawPanel(g, -w / 2, 0, w, h);
     this.buildBox.add(g);
-    BUILDABLES.forEach((b, k) => {
-      const x = -w / 2 + 8 + k * slot;
-      const sel = k === gs.buildSel;
-      const afford = (Object.entries(b.cost) as Array<[ItemId, number]>).every(([id, n]) => have(id) >= n);
-      const cell = this.add.graphics();
-      cell.fillStyle(hex(sel ? '#f2b93b' : '#b08a54')).fillRect(x + 2, 8, slot - 4, h - 16);
-      cell.fillStyle(hex('#e7cf9c')).fillRect(x + 4, 10, slot - 8, h - 20);
-      this.buildBox.add(cell);
-      const frame = b.kind === 'wall' ? 'wall_10' : b.kind;
-      this.buildBox.add(this.text(x + 7, 12, k === 10 ? '-' : String((k + 1) % 10), 11, UI.wood));
-      const name = this.text(x + slot / 2 + 5, 13, b.name, 12, afford ? UI.ink : '#9c8566').setOrigin(0.5, 0);
-      // Long names like "Workbench" shrink a little so they clear the slot number.
-      if (name.width > slot - 26) name.setScale((slot - 26) / name.width);
-      this.buildBox.add(name);
-      this.buildBox.add(this.add.image(x + (wide ? 24 : 18), 78, 'atlas', frame).setOrigin(0.5, 1).setScale(wide ? 1.5 : 1.2).setAlpha(afford ? 1 : 0.5));
-      const costs = Object.entries(b.cost) as Array<[ItemId, number]>;
-      costs.forEach(([id, n], j) => {
-        const yy = costs.length > 2 ? 32 + j * 16 : 38 + j * 18;
-        this.buildBox.add(this.add.image(x + (wide ? 52 : slot - 28), yy + 7, 'atlas', `item_${id}`).setScale(wide ? 1 : 0.8));
-        this.buildBox.add(this.text(x + (wide ? 62 : slot - 20), yy, `${n}`, 13, have(id) >= n ? '#3f7a3a' : '#a2412f'));
+    const x0 = -w / 2 + 16;
+    if (gs.demolish) {
+      this.buildBox.add(this.add.image(x0 + 16, 33, 'atlas', 'target').setScale(1.6).setTint(0xd8434e));
+      this.buildBox.add(this.text(x0 + 40, 12, 'Demolish', 16, UI.ink));
+      this.buildBox.add(this.text(x0 + 40, 36, 'Half of the cost comes back', 12, UI.wood));
+    } else {
+      const frame = def.kind === 'wall' ? 'wall_10' : def.kind;
+      this.buildBox.add(this.add.image(x0 + 16, 58, 'atlas', frame).setOrigin(0.5, 1).setScale(1.4));
+      this.buildBox.add(this.text(x0 + 40, 12, def.name, 16, UI.ink));
+      (Object.entries(def.cost) as Array<[ItemId, number]>).forEach(([id, n], j) => {
+        const x = x0 + 48 + j * 46;
+        this.buildBox.add(this.add.image(x, 44, 'atlas', `item_${id}`));
+        this.buildBox.add(this.text(x + 10, 36, `${n}`, 13, have(id) >= n ? '#3f7a3a' : '#a2412f'));
       });
-    });
+    }
+    this.buildBox.add(
+      this.text(w / 2 - 16, 15, '[Left click] place   [Right click] cancel\n[B] menu   [1-9, 0, -] switch', 12, UI.wood).setOrigin(1, 0).setAlign('right').setLineSpacing(4),
+    );
   }
 
   private buildMinimap() {
@@ -428,48 +431,107 @@ export class HudScene extends Phaser.Scene {
     this.packBox.add(label);
   }
 
-  /** Crafting card: hand recipes (C) or workbench recipes. */
+  /** The build and craft menu (B or C): recipes on the left, buildings on the right. */
   private redrawCraft() {
-    const recipes = this.openRecipes();
-    this.craftBox.setVisible(recipes !== null);
-    if (!recipes) {
-      this.craftKey = '';
+    const gs = this.gs;
+    this.craftBox.setVisible(gs.menuOpen);
+    if (!gs.menuOpen) {
+      this.menuKey = '';
       return;
     }
-    const atBench = this.gs.bench !== null;
-    const pack = this.gs.pack;
-    const storage = atBench ? this.gs.storage : null;
-    const have = (id: ItemId) => pack.count(id) + (storage?.count(id) ?? 0);
-    const can = (r: Recipe) => (Object.entries(r.needs) as Array<[ItemId, number]>).every(([id, n]) => have(id) >= n);
-    const key = atBench + recipes.map((r) => Object.keys(r.needs).map((id) => have(id as ItemId)).join() + pack.has(r.makes)).join('|');
-    if (key === this.craftKey) return;
-    this.craftKey = key;
+    const pack = gs.pack;
+    const have = (id: ItemId) => pack.count(id) + gs.stash.count(id);
+    const can = (cost: Partial<Record<ItemId, number>>) => (Object.entries(cost) as Array<[ItemId, number]>).every(([id, n]) => have(id) >= n);
+    const recipes = this.recipes();
+    const key = [gs.nearBench, this.scale.width, ...(['stick', 'stone', 'fiber', 'wood', 'copper_ore'] as ItemId[]).map(have), ...recipes.map(([r]) => pack.has(r.makes))].join('|');
+    if (key === this.menuKey) return;
+    this.menuKey = key;
     this.craftBox.removeAll(true);
-    const w = 360;
-    const h = 56 + recipes.length * 52;
+
+    const rowH = 46;
+    const slot = 84;
+    const slotH = 86;
+    const cols = 4;
+    const craftW = 320;
+    const w = 16 + craftW + 20 + cols * slot + 16;
+    const cells = BUILDABLES.length + 1;
+    const bodyH = Math.max(recipes.length * rowH, Math.ceil(cells / cols) * slotH);
+    const h = 52 + bodyH + 34;
     const g = this.add.graphics();
     this.drawPanel(g, -w / 2, 0, w, h);
     this.craftBox.add(g);
-    this.craftBox.add(this.text(-w / 2 + 20, 14, atBench ? 'Workbench' : 'Craft by hand', 18, UI.ink));
-    this.craftBox.add(
-      this.text(w / 2 - 20, 18, atBench ? (storage ? 'uses pack + storage · Esc' : 'uses pack · Esc') : 'C to close', 12, UI.wood).setOrigin(1, 0),
-    );
-    recipes.forEach((r, k) => {
-      const y = 46 + k * 52;
-      const ok = can(r);
+    const left = -w / 2 + 16;
+    const right = left + craftW + 20;
+    this.craftBox.add(this.text(left + 4, 14, 'Craft', 18, UI.ink));
+    this.craftBox.add(this.text(right + 4, 14, 'Build', 18, UI.ink));
+    this.craftBox.add(this.text(w / 2 - 18, 18, 'B, C or Esc to close', 12, UI.wood).setOrigin(1, 0));
+    const hover = this.add.graphics();
+    this.craftBox.add(hover);
+    const hoverAt = (x: number, y: number, ww: number, hh: number) => {
+      hover.clear();
+      hover.lineStyle(2, hex('#f2b93b')).strokeRect(x, y, ww, hh);
+    };
+    const zone = (x: number, y: number, ww: number, hh: number, run: () => void) => {
+      const z = this.add.zone(x + ww / 2, y + hh / 2, ww, hh).setInteractive({ useHandCursor: true });
+      z.on('pointerover', () => hoverAt(x, y, ww, hh));
+      z.on('pointerout', () => hover.clear());
+      z.on('pointerdown', (p: Phaser.Input.Pointer) => p.leftButtonDown() && run());
+      this.craftBox.add(z);
+    };
+
+    // Crafting: hand recipes, then workbench recipes (locked unless one is nearby).
+    recipes.forEach(([r, bench], k) => {
+      const y = 46 + k * rowH;
       const owned = pack.has(r.makes);
-      this.craftBox.add(this.text(-w / 2 + 20, y + 8, `${k + 1}`, 18, ok && !owned ? UI.ink : '#9c8566'));
-      this.craftBox.add(this.add.image(-w / 2 + 52, y + 18, 'atlas', `item_${r.makes}`).setScale(2));
-      this.craftBox.add(
-        this.text(-w / 2 + 74, y + 2, ITEMS[r.makes].name + (owned ? '  (have one)' : ''), 15, ok && !owned ? UI.ink : '#9c8566'),
-      );
+      const locked = bench && !gs.nearBench;
+      const ok = can(r.needs) && !owned && !locked;
+      const cell = this.add.graphics();
+      cell.fillStyle(hex('#e7cf9c')).fillRect(left, y, craftW, rowH - 4);
+      this.craftBox.add(cell);
+      this.craftBox.add(this.add.image(left + 20, y + 20, 'atlas', `item_${r.makes}`).setScale(1.8).setAlpha(locked ? 0.5 : 1));
+      const note = owned ? '  (have one)' : locked ? '  (at a workbench)' : '';
+      this.craftBox.add(this.text(left + 42, y + 3, ITEMS[r.makes].name + note, 14, ok ? UI.ink : '#9c8566'));
       (Object.entries(r.needs) as Array<[ItemId, number]>).forEach(([id, n], j) => {
         const got = have(id);
-        const x = -w / 2 + 82 + j * 80;
-        this.craftBox.add(this.add.image(x, y + 32, 'atlas', `item_${id}`));
-        this.craftBox.add(this.text(x + 10, y + 24, `${Math.min(got, n)}/${n}`, 13, got >= n ? '#3f7a3a' : '#a2412f'));
+        const x = left + 50 + j * 72;
+        this.craftBox.add(this.add.image(x, y + 30, 'atlas', `item_${id}`));
+        this.craftBox.add(this.text(x + 10, y + 22, `${Math.min(got, n)}/${n}`, 13, got >= n ? '#3f7a3a' : '#a2412f'));
       });
+      zone(left, y, craftW, rowH - 4, () => this.craft(r, bench));
     });
+
+    // Building: every buildable, then the demolish tool. Clicking one starts placing it.
+    for (let k = 0; k < cells; k++) {
+      const x = right + (k % cols) * slot;
+      const y = 46 + Math.floor(k / cols) * slotH;
+      const cell = this.add.graphics();
+      cell.fillStyle(hex('#e7cf9c')).fillRect(x + 2, y, slot - 4, slotH - 6);
+      this.craftBox.add(cell);
+      if (k === BUILDABLES.length) {
+        this.craftBox.add(this.text(x + slot / 2, y + 4, 'Demolish', 12, UI.ink).setOrigin(0.5, 0));
+        this.craftBox.add(this.add.image(x + slot / 2, y + 46, 'atlas', 'target').setScale(1.8).setTint(0xd8434e));
+        zone(x + 2, y, slot - 4, slotH - 6, () => this.pickDemolish());
+        continue;
+      }
+      const b = BUILDABLES[k];
+      const ok = can(b.cost);
+      this.craftBox.add(this.text(x + 7, y + 3, k === 10 ? '-' : String((k + 1) % 10), 11, UI.wood));
+      const name = this.text(x + slot / 2 + 5, y + 4, b.name, 12, ok ? UI.ink : '#9c8566').setOrigin(0.5, 0);
+      if (name.width > slot - 26) name.setScale((slot - 26) / name.width);
+      this.craftBox.add(name);
+      const frame = b.kind === 'wall' ? 'wall_10' : b.kind;
+      this.craftBox.add(this.add.image(x + 24, y + 74, 'atlas', frame).setOrigin(0.5, 1).setScale(1.4).setAlpha(ok ? 1 : 0.5));
+      const costs = Object.entries(b.cost) as Array<[ItemId, number]>;
+      costs.forEach(([id, n], j) => {
+        const yy = y + (costs.length > 2 ? 22 + j * 16 : 28 + j * 18);
+        this.craftBox.add(this.add.image(x + 52, yy + 7, 'atlas', `item_${id}`));
+        this.craftBox.add(this.text(x + 62, yy, `${n}`, 13, have(id) >= n ? '#3f7a3a' : '#a2412f'));
+      });
+      zone(x + 2, y, slot - 4, slotH - 6, () => this.pickBuild(k));
+    }
+    this.craftBox.add(
+      this.text(0, h - 26, 'Click a recipe to craft it, or a building to place it. Uses your pack first, then storage.', 12, UI.wood).setOrigin(0.5, 0),
+    );
   }
 
   /** While you're at camp, show what's in the stash. */
@@ -507,13 +569,13 @@ export class HudScene extends Phaser.Scene {
     this.hint.setPosition(12, height - 12).setVisible(width >= 760);
     this.packBox.setPosition(width / 2, height - 8);
     this.prompt.setPosition(width / 2, height - 116);
-    this.craftBox.setPosition(width / 2, Math.round(height * 0.28));
+    this.craftBox.setPosition(width / 2, Math.max(12, Math.round(height * 0.14)));
     this.stashBox.setPosition(12, 152);
     this.statsBox.setPosition(width / 2, Math.round(height * 0.2));
     this.controlsBox.setPosition(width / 2, Math.max(12, Math.round(height / 2 - 190)));
     this.hurtFlash.setSize(width, height);
     this.buildBox.setPosition(width / 2, 12);
-    this.buildMsg.setPosition(width / 2, 108);
+    this.buildMsg.setPosition(width / 2, 84);
     const size = this.worldScene.world.width * this.mapScale;
     this.mapBox.setPosition(width - size - 22, 22);
     // Hide the map on small screens by default; M still shows it.

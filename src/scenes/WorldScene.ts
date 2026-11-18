@@ -164,24 +164,28 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-SPACE', () => (this.queuedAttack = true));
     this.input.keyboard!.on('keydown-J', () => (this.queuedAttack = true));
     this.input.keyboard!.on('keydown-F', () => (this.queuedEat = true));
-    this.input.keyboard!.on('keydown-B', (ev: KeyboardEvent) => {
-      if (ev.repeat) return;
-      this.game_.buildMode = !this.game_.buildMode;
-      this.game_.bench = null;
-    });
     this.input.mouse?.disableContextMenu();
     this.ghost = this.add.image(0, 0, 'atlas', 'floor').setOrigin(0.5, 1).setAlpha(0.65).setDepth(200002).setVisible(false);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (this.busy) return;
-      if (!this.game_.buildMode) {
+      const st = this.game_;
+      // The menu takes the mouse while it's open, and the click that closed it doesn't count.
+      if (this.busy || st.menuOpen || performance.now() - st.menuClosedAt < 200) return;
+      if (!st.buildMode) {
         // Left click uses whatever is under the mouse, or what's in front of you.
         if (p.leftButtonDown()) this.queuedAct = true;
         // Right click swings your weapon toward the mouse.
         else if (p.rightButtonDown()) this.queuedSwing = true;
         return;
       }
-      if (p.rightButtonDown()) this.removeAtPointer();
+      // Right click cancels placing; it won't swing until the button is let go.
+      if (p.rightButtonDown()) {
+        st.stopPlacing();
+        this.holdSwing = true;
+      } else if (st.demolish) this.removeAtPointer();
       else this.placeAtPointer();
+    });
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      if (!p.rightButtonDown()) this.holdSwing = false;
     });
 
     this.scale.on('resize', this.fitZoom, this);
@@ -189,6 +193,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private queuedAct = false;
+  /** Set when right click cancelled placing, until it's released. */
+  private holdSwing = false;
   private queuedEat = false;
   /** Props as the map was generated, so a save only stores what changed. */
   private baseProps!: Uint8Array;
@@ -610,7 +616,7 @@ export class WorldScene extends Phaser.Scene {
       if (t.what === 'chest') return ['Store materials in chest', false];
       if (t.what === 'bed') return ['Sleep (you will wake here)', false];
       if (t.what === 'mill' || t.what === 'quarry') return [this.millText(t.tx, t.ty), false];
-      return ['Use workbench', false];
+      return ['Open the build and craft menu (workbench recipes)', false];
     }
     if (t.kind === 'camp') {
       if (t.what === 'crate' || t.what === 'sack') return ['Store materials in camp stash', false];
@@ -638,10 +644,7 @@ export class WorldScene extends Phaser.Scene {
       else if (t.what === 'bed') {
         st.respawn = [t.tx, t.ty];
         this.rest(true);
-      } else {
-        st.bench = st.bench ? null : [t.tx, t.ty];
-        st.buildMode = false;
-      }
+      } else st.setMenu(true);
       return;
     }
     if (t.kind === 'camp') {
@@ -1171,11 +1174,27 @@ export class WorldScene extends Phaser.Scene {
     return true;
   }
 
+  /** Why the demolish tool can't take down what's on (x, y), or null if it can. */
+  private checkDemolish(x: number, y: number): string | null {
+    const w = this.world;
+    if (!inBounds(w, x, y)) return 'Nothing built here';
+    const i = idx(w, x, y);
+    if (w.build[i] === Build.None && !w.floor[i]) return 'Nothing built here';
+    const ptx = Math.floor(this.player.x / TILE);
+    const pty = Math.floor(this.player.body.center.y / TILE);
+    if (Math.max(Math.abs(x - ptx), Math.abs(y - pty)) > BUILD_REACH) return 'Too far away';
+    return null;
+  }
+
   private removeAtPointer() {
     const st = this.game_;
-    const w = this.world;
     const [x, y] = this.pointerTile();
-    if (!inBounds(w, x, y)) return;
+    const why = this.checkDemolish(x, y);
+    if (why) {
+      st.emit('toast', why);
+      this.sfx.thud();
+      return;
+    }
     const kind = this.clearBuild(x, y);
     if (!kind) return;
     const refund = refundFor(kind);
@@ -1198,6 +1217,17 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     const [x, y] = this.pointerTile();
+    if (st.demolish) {
+      const why = this.checkDemolish(x, y);
+      st.buildMsg = why;
+      this.ghost
+        .setFrame('target')
+        .setPosition(x * TILE + 8, (y + 1) * TILE)
+        .setDepth(200002)
+        .setTint(why ? 0x9c8566 : 0xff5a4a)
+        .setVisible(true);
+      return;
+    }
     const def = BUILDABLES[st.buildSel];
     const frame = def.kind === 'wall' ? 'wall_0' : def.kind;
     const why = this.checkPlacement(x, y);
@@ -1275,6 +1305,15 @@ export class WorldScene extends Phaser.Scene {
         if (img) img.setFrame(status.ok ? [base, `${base}_1`, `${base}_2`, `${base}_3`][Math.floor(time / speed) % 4] : base);
       }
     }
+  }
+
+  /** A workbench within 3 tiles lets you craft its recipes from the menu. */
+  private workbenchNear(tx: number, ty: number) {
+    const w = this.world;
+    for (let dy = -3; dy <= 3; dy++)
+      for (let dx = -3; dx <= 3; dx++)
+        if (inBounds(w, tx + dx, ty + dy) && w.build[idx(w, tx + dx, ty + dy)] === Build.Workbench) return true;
+    return false;
   }
 
   private nearChest(tx: number, ty: number) {
@@ -1414,7 +1453,7 @@ export class WorldScene extends Phaser.Scene {
       if (this.lastPrompt !== '') st.emit('prompt', null, false);
       this.lastPrompt = '';
     }
-    const holding = this.input.activePointer.leftButtonDown() && !st.buildMode;
+    const holding = this.input.activePointer.leftButtonDown() && !st.buildMode && !st.menuOpen;
     // Holding the button keeps chopping or mining; everything else takes a fresh click.
     if (!this.busy && (this.queuedAct || (holding && this.target?.kind === 'prop'))) {
       if (hovered) this.faceTile(hovered.tx, hovered.ty);
@@ -1442,11 +1481,11 @@ export class WorldScene extends Phaser.Scene {
     }
 
     st.nearStorage = st.atCamp || this.nearChest(tx, ty);
-    if (st.bench && Math.hypot(st.bench[0] - tx, st.bench[1] - ty) > 2.5) st.bench = null;
+    st.nearBench = this.workbenchNear(tx, ty);
     if (this.queuedAttack || (!this.busy && (k.space.isDown))) this.attack(time);
     // Right click (held or tapped) swings toward the mouse.
     const pointer = this.input.activePointer;
-    if (!this.busy && !st.buildMode && (this.queuedSwing || pointer.rightButtonDown())) {
+    if (!this.busy && !st.buildMode && !st.menuOpen && !this.holdSwing && (this.queuedSwing || pointer.rightButtonDown())) {
       const aim = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
       this.attack(time, { x: aim.x, y: aim.y });
     }

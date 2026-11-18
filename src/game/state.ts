@@ -32,8 +32,27 @@ export class GameState {
   buildSel = 1;
   /** Why the ghost can't be placed right now, or null if it can. */
   buildMsg: string | null = null;
-  /** Tile of the workbench whose panel is open, or null. */
-  bench: [number, number] | null = null;
+  /** The build and craft menu (B or C) is open. */
+  menuOpen = false;
+  /** Placing with the demolish tool instead of a buildable. */
+  demolish = false;
+  /** A workbench is close enough to craft its recipes. */
+  nearBench = false;
+  /** When the menu last closed, so the click that closed it doesn't also place something. */
+  menuClosedAt = 0;
+
+  /** Opens or closes the build and craft menu; opening it stops any placing. */
+  setMenu(open: boolean) {
+    if (this.menuOpen && !open) this.menuClosedAt = performance.now();
+    this.menuOpen = open;
+    if (open) this.stopPlacing();
+  }
+
+  /** Leaves placing (or demolishing) mode. */
+  stopPlacing() {
+    this.buildMode = false;
+    this.demolish = false;
+  }
   /** Where you wake after collapsing: the last bed you slept in, else camp. */
   respawn: [number, number] | null = null;
   readonly progress = new Progress();
