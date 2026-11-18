@@ -46,7 +46,7 @@ Controls:
 | F | Eat to heal (mushrooms first, then berries). After a meal, food can't heal you again for 15 seconds; the Food bar shows the countdown |
 | C | Hand-crafting (then 1 or 2 to craft) |
 | B | Build mode: 1-7 picks floor, wall, door, chest, bed, workbench or lumber mill; left click builds, right click removes (half the cost back) |
-| L | Stats: 1-4 spends a point on Strength, Endurance, Agility or Gathering |
+| L | Stats: click + and - to plan points for Strength, Endurance, Agility or Gathering (it shows what each change does), then Confirm or press Enter |
 | H | Show or hide the controls panel (also on the title screen) |
 | Esc | Close any panel or build mode |
 | M | Show or hide the map |

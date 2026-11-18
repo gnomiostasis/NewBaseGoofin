@@ -8,7 +8,8 @@ import { Ground, Prop } from '../world/generate';
 import { darknessAt, tintAt } from '../world/shade';
 import { BENCH_RECIPES, HAND_RECIPES, ITEMS, type ItemId, type Recipe } from '../game/items';
 import { BUILDABLES, payCost } from '../game/build';
-import { LEVELING, STAT_INFO, STAT_ORDER, xpToNext } from '../game/stats';
+import { LEVELING, STAT_INFO, STAT_ORDER, xpToNext, type StatId } from '../game/stats';
+import { previewStat } from '../game/statPreview';
 import { CLASSES, CLASS_ORDER, type ClassId } from '../game/classes';
 import { GameState } from '../game/state';
 import { CONTROLS } from '../game/controls';
@@ -62,7 +63,15 @@ export class HudScene extends Phaser.Scene {
   private craftBox!: Phaser.GameObjects.Container;
   private menuKey = '';
   private levelText!: Phaser.GameObjects.Text;
-  private statsOpen = false;
+  /** Points staged on the stat screen with +, not yet confirmed. */
+  private pending: Record<StatId, number> = { strength: 0, endurance: 0, agility: 0, gathering: 0 };
+  private get statsOpen() {
+    return this.gs.statsOpen;
+  }
+  private set statsOpen(open: boolean) {
+    if (!open) this.clearPending();
+    this.gs.statsOpen = open;
+  }
   private statsKey = '';
   private statsBox!: Phaser.GameObjects.Container;
   /** The "choose your path" picker, shown until you have a class. */
@@ -135,13 +144,7 @@ export class HudScene extends Phaser.Scene {
         if (n <= CLASS_ORDER.length) this.chooseClass(CLASS_ORDER[n - 1]);
         return;
       }
-      if (this.statsOpen) {
-        if (n <= STAT_ORDER.length && this.gs.progress.spend(STAT_ORDER[n - 1])) {
-          this.gs.sfx.craft();
-          this.statsKey = '';
-        }
-        return;
-      }
+      if (this.statsOpen) return;
       // In the menu or while placing, number keys pick what to build.
       if ((this.gs.menuOpen || this.gs.buildMode) && n <= BUILDABLES.length) this.pickBuild(n - 1);
     });
@@ -155,6 +158,7 @@ export class HudScene extends Phaser.Scene {
       this.statsOpen = false;
       this.controlsBox.setVisible(false);
     });
+    kb.on('keydown-ENTER', () => this.statsOpen && this.confirmPending());
     kb.on('keydown-H', (ev: KeyboardEvent) => {
       if (!ev.repeat) this.controlsBox.setVisible(!this.controlsBox.visible);
     });
@@ -586,7 +590,8 @@ export class HudScene extends Phaser.Scene {
     this.prompt.setPosition(width / 2, height - 116);
     this.craftBox.setPosition(width / 2, Math.max(12, Math.round(height * 0.14)));
     this.stashBox.setPosition(12, 152);
-    this.statsBox.setPosition(width / 2, Math.round(height * 0.2));
+    this.statsBox.setX(width / 2);
+    this.statsKey = '';
     this.controlsBox.setPosition(width / 2, Math.max(12, Math.round(height / 2 - 190)));
     this.hurtFlash.setSize(width, height);
     this.buildBox.setPosition(width / 2, 12);
@@ -696,7 +701,6 @@ export class HudScene extends Phaser.Scene {
     this.statsKey = '';
   }
 
-  /** Character sheet (L): level, XP, and the four stats with [1-4] to spend points. */
   /** A parchment card listing every control. */
   /** Keycaps and what they do, always on screen so it's clear how to play. */
   private drawQuickControls() {
@@ -737,41 +741,125 @@ export class HudScene extends Phaser.Scene {
     this.controlsBox.setDepth(10);
   }
 
+  private clearPending() {
+    for (const id of STAT_ORDER) this.pending[id] = 0;
+    this.statsKey = '';
+  }
+
+  private pendingTotal() {
+    return STAT_ORDER.reduce((n, id) => n + this.pending[id], 0);
+  }
+
+  /** + or - on a stat: stages a point, or takes a staged one back. */
+  private stagePoint(id: StatId, d: 1 | -1) {
+    const p = this.gs.progress;
+    if (d > 0 && (this.pendingTotal() >= p.points || p.stats[id] + this.pending[id] >= LEVELING.maxPerStat)) return;
+    if (d < 0 && this.pending[id] <= 0) return;
+    this.pending[id] += d;
+    this.gs.sfx.pickup();
+    this.statsKey = '';
+  }
+
+  /** Spends every staged point. */
+  private confirmPending() {
+    if (!this.pendingTotal()) return;
+    for (const id of STAT_ORDER) for (let i = 0; i < this.pending[id]; i++) this.gs.progress.spend(id);
+    this.clearPending();
+    this.gs.sfx.craft();
+  }
+
+  /** A small wooden button on the stat screen. */
+  private statButton(x: number, y: number, w: number, h: number, label: string, enabled: boolean, onClick: () => void) {
+    const g = this.add.graphics();
+    const draw = (hover: boolean) => {
+      g.clear();
+      g.fillStyle(hex(UI.outline)).fillRect(x, y, w, h);
+      g.fillStyle(hex(!enabled ? '#cdb991' : hover ? '#f2c66a' : '#e0b25c')).fillRect(x + 2, y + 2, w - 4, h - 4);
+      if (enabled) g.fillStyle(hex('#fbe2a2')).fillRect(x + 2, y + 2, w - 4, 2);
+    };
+    draw(false);
+    const t = this.text(x + w / 2, y + h / 2, label, label.length > 1 ? 14 : 18, enabled ? UI.ink : '#9c8566').setOrigin(0.5, 0.5);
+    this.statsBox.add([g, t]);
+    if (!enabled) return;
+    const z = this.add.zone(x, y, w, h).setOrigin(0).setInteractive({ useHandCursor: true });
+    z.on('pointerover', () => draw(true));
+    z.on('pointerout', () => draw(false));
+    z.on('pointerdown', (ptr: Phaser.Input.Pointer) => ptr.leftButtonDown() && onClick());
+    this.statsBox.add(z);
+  }
+
+  /** Character sheet (L): level, XP, and the four stats with + and - to stage points, then Confirm. */
   private redrawStats() {
     this.statsBox.setVisible(this.statsOpen);
     if (!this.statsOpen) return;
     const p = this.gs.progress;
-    const key = `${p.level}|${p.xp}|${p.points}|${STAT_ORDER.map((s) => p.stats[s]).join()}`;
+    const pend = this.pending;
+    const key = `${p.level}|${p.xp}|${p.points}|${p.cls}|${this.gs.pack.toolPower('axe')}|${STAT_ORDER.map((s) => `${p.stats[s]}+${pend[s]}`).join()}`;
     if (key === this.statsKey) return;
     this.statsKey = key;
     this.statsBox.removeAll(true);
-    const w = 420;
-    const h = 92 + STAT_ORDER.length * 40;
+    const w = 600;
+    const rowH = 66;
+    const top = 56;
+    const h = top + STAT_ORDER.length * rowH + 58;
+    const { height } = this.scale;
+    this.statsBox.setY(Math.max(12, Math.round(height / 2 - h / 2)));
+    const left = -w / 2 + 22;
+    const right = w / 2 - 22;
     const g = this.add.graphics();
     this.drawPanel(g, -w / 2, 0, w, h);
     this.statsBox.add(g);
-    this.statsBox.add(this.text(-w / 2 + 20, 14, `Level ${p.level}`, 20, UI.ink));
+    this.statsBox.add(this.text(left, 14, `Level ${p.level}`, 20, UI.ink));
     const next = p.level >= LEVELING.maxLevel ? 'Max level' : `${p.xp} / ${xpToNext(p.level)} XP`;
     const cls = p.cls ? CLASSES[p.cls].name : 'No class';
-    this.statsBox.add(this.text(-w / 2 + 120, 20, `${cls}  ·  ${next}`, 13, UI.wood));
+    this.statsBox.add(this.text(left + 100, 20, `${cls}  ·  ${next}`, 13, UI.wood));
+    const left_pts = p.points - this.pendingTotal();
     this.statsBox.add(
-      this.text(w / 2 - 20, 18, p.points ? `${p.points} point${p.points > 1 ? 's' : ''} to spend` : 'L to close', 13, p.points ? '#a2412f' : UI.wood).setOrigin(1, 0),
+      this.text(right, 18, p.points ? `${left_pts} point${left_pts === 1 ? '' : 's'} left to spend` : 'L to close', 13, left_pts ? '#a2412f' : UI.wood).setOrigin(1, 0),
     );
+    const after = { ...p.stats };
+    for (const id of STAT_ORDER) after[id] += pend[id];
+    const input = { stats: p.stats, cls: p.cls, axePower: this.gs.pack.toolPower('axe'), level: p.level };
     STAT_ORDER.forEach((id, k) => {
-      const y = 52 + k * 40;
+      const y = top + k * rowH;
       const val = p.stats[id];
-      const canSpend = p.points > 0 && val < LEVELING.maxPerStat;
-      this.statsBox.add(this.text(-w / 2 + 20, y + 4, `${k + 1}`, 16, canSpend ? UI.ink : '#9c8566'));
-      this.statsBox.add(this.text(-w / 2 + 44, y, STAT_INFO[id].name, 15, UI.ink));
-      this.statsBox.add(this.text(-w / 2 + 44, y + 18, STAT_INFO[id].perPoint, 11, UI.wood));
+      if (k > 0) {
+        const line = this.add.graphics();
+        line.fillStyle(hex('#d9c49a')).fillRect(left, y - 6, w - 44, 1);
+        this.statsBox.add(line);
+      }
+      this.statsBox.add(this.text(left, y, STAT_INFO[id].name, 16, UI.ink));
+      this.statsBox.add(this.text(left + 110, y + 3, STAT_INFO[id].perPoint, 11, UI.wood));
+      // What it does now, and with the staged points.
+      previewStat(id, input, after).forEach((e, j) => {
+        const x = left + j * 190;
+        const changed = e.next !== e.now;
+        const t = this.text(x, y + 26, `${e.label}  ${e.now}`, 13, UI.ink);
+        this.statsBox.add(t);
+        if (changed) this.statsBox.add(this.text(x + t.width + 6, y + 26, `→ ${e.next}`, 13, '#3f8a3a'));
+      });
+      // Pips: spent in orange, staged in green.
       const pips = this.add.graphics();
+      const pipX = right - 76 - LEVELING.maxPerStat * 13;
       for (let i = 0; i < LEVELING.maxPerStat; i++) {
-        pips.fillStyle(hex(UI.outline)).fillRect(w / 2 - 20 - (LEVELING.maxPerStat - i) * 14, y + 6, 11, 11);
-        pips.fillStyle(hex(i < val ? '#e0892c' : '#d9c49a')).fillRect(w / 2 - 19 - (LEVELING.maxPerStat - i) * 14, y + 7, 9, 9);
+        pips.fillStyle(hex(UI.outline)).fillRect(pipX + i * 13, y + 3, 11, 11);
+        pips.fillStyle(hex(i < val ? '#e0892c' : i < val + pend[id] ? '#7fc25a' : '#d9c49a')).fillRect(pipX + 1 + i * 13, y + 4, 9, 9);
       }
       this.statsBox.add(pips);
+      const canAdd = left_pts > 0 && val + pend[id] < LEVELING.maxPerStat;
+      this.statsBox.add(this.text(pipX - 8, y + 1, val + pend[id] >= LEVELING.maxPerStat ? 'Max' : `${val + pend[id]}/${LEVELING.maxPerStat}`, 12, UI.wood).setOrigin(1, 0));
+      this.statsButtonRow(right, y, id, pend[id] > 0, canAdd);
     });
-    this.statsBox.add(this.text(0, h - 26, '1-4 spends a point. Gather, craft, build and fight for XP.', 11, UI.wood).setOrigin(0.5, 0));
+    const by = top + STAT_ORDER.length * rowH + 8;
+    const staged = this.pendingTotal();
+    this.statsBox.add(this.text(left, by + 8, staged ? `Confirm to spend ${staged} point${staged > 1 ? 's' : ''}. Enter also confirms.` : 'Gather, craft, build and fight for XP.', 12, UI.wood));
+    this.statButton(right - 196, by, 86, 32, 'Reset', staged > 0, () => this.clearPending());
+    this.statButton(right - 100, by, 100, 32, 'Confirm', staged > 0, () => this.confirmPending());
+  }
+
+  private statsButtonRow(right: number, y: number, id: StatId, canRemove: boolean, canAdd: boolean) {
+    this.statButton(right - 64, y, 30, 30, '-', canRemove, () => this.stagePoint(id, -1));
+    this.statButton(right - 30, y, 30, 30, '+', canAdd, () => this.stagePoint(id, 1));
   }
 
   update(_time: number, _delta: number) {

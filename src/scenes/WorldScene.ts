@@ -172,7 +172,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       const st = this.game_;
       // The menu takes the mouse while it's open, and the click that closed it doesn't count.
-      if (this.busy || st.menuOpen || performance.now() - st.menuClosedAt < 200) return;
+      if (this.busy || st.uiOpen || performance.now() - st.menuClosedAt < 200) return;
       if (!st.buildMode) {
         // Left click uses whatever is under the mouse, or what's in front of you.
         if (p.leftButtonDown()) this.queuedAct = true;
@@ -1481,7 +1481,7 @@ export class WorldScene extends Phaser.Scene {
       if (this.lastPrompt !== '') st.emit('prompt', null, false);
       this.lastPrompt = '';
     }
-    const holding = this.input.activePointer.leftButtonDown() && !st.buildMode && !st.menuOpen;
+    const holding = this.input.activePointer.leftButtonDown() && !st.buildMode && !st.uiOpen;
     // Holding the button keeps chopping or mining; everything else takes a fresh click.
     if (!this.busy && (this.queuedAct || (holding && this.target?.kind === 'prop'))) {
       if (hovered) this.faceTile(hovered.tx, hovered.ty);
@@ -1513,7 +1513,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.queuedAttack || (!this.busy && (k.space.isDown))) this.attack(time);
     // Right click (held or tapped) swings toward the mouse.
     const pointer = this.input.activePointer;
-    if (!this.busy && !st.buildMode && !st.menuOpen && !this.holdSwing && (this.queuedSwing || pointer.rightButtonDown())) {
+    if (!this.busy && !st.buildMode && !st.uiOpen && !this.holdSwing && (this.queuedSwing || pointer.rightButtonDown())) {
       const aim = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
       this.attack(time, { x: aim.x, y: aim.y });
     }

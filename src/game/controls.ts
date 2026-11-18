@@ -8,7 +8,7 @@ export const CONTROLS: Array<[key: string, does: string]> = [
   ['F', 'Eat to heal (mushrooms first, then berries); then wait out the Food bar before the next meal'],
   ['B or C', 'Build & craft menu: click a recipe to craft, or a building to place it'],
   ['Placing', 'Left click places, right click (or Esc) cancels, 1-9, 0, - switch'],
-  ['L', 'Stats: 1-4 spends a point'],
+  ['L', 'Stats: + and - stage points, Confirm (or Enter) spends them'],
   ['M', 'Map'],
   ['H', 'Show or hide these controls'],
   ['Esc', 'Close any panel'],

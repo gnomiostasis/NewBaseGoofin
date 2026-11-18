@@ -39,6 +39,12 @@ export class GameState {
   demolish = false;
   /** A workbench is close enough to craft its recipes. */
   nearBench = false;
+  /** The stat screen (L) is open. */
+  statsOpen = false;
+  /** A panel that takes clicks is open, so clicks shouldn't reach the world. */
+  get uiOpen() {
+    return this.menuOpen || this.statsOpen;
+  }
   /** When the menu last closed, so the click that closed it doesn't also place something. */
   menuClosedAt = 0;
 
