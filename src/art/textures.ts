@@ -851,25 +851,36 @@ function classMage(g: Ctx) {
   );
 }
 
-function handcart(g: Ctx) {
-  // 14 x 10: a little wooden handcart with one big wheel and a pull handle, facing right.
+const MULE = { m: '#8d7f72', d: '#665a50', ear: '#c9a7a0', nose: '#d9ccb8', hoof: '#3a2a20' };
+
+function packMule(g: Ctx, frame: number) {
+  // 20 x 16: a grey pack mule with long ears and a roped burlap pack on its back, facing right.
+  // Two frames so its legs swap as it plods along.
+  shadow(g, 10, 15, 9, 1.2, 0.3);
+  const legs =
+    frame === 0
+      ? ['...o.o......o.o.....', '...o.o......o.o.....', '...h.h......h.h.....']
+      : ['....oo.....o..o.....', '....oo.....o..o.....', '....hh.....h..h.....'];
   sprite(
     g,
     0,
     0,
     [
-      '..............',
-      'oooooooooo....',
-      'owwwwwwwwo....',
-      'oWWWWWWWWoohhh',
-      'owwwwwwwwo....',
-      'oooooooooo....',
-      '...ooooo......',
-      '..osSsSso.....',
-      '..oSsosSo.....',
-      '...ooooo......',
+      '..............o.o...',
+      '.............oiooio.',
+      '.............oimmio.',
+      '.....oooooo..ommmmo.',
+      '....oLllllbo.ommemmo',
+      '..oooLbbrbbBoommmmmo',
+      '.ommmlbbrbbBommmonno',
+      'dommmlbbrbbBmmmo.oo.',
+      'dommmBbbrbbBmmo.....',
+      'tommmoBBrBBommo.....',
+      '.ommmdooooodmmo.....',
+      '..oddddddddddo......',
+      ...legs,
     ],
-    { o: OUTLINE, w: WOOD[0], W: WOOD[2], h: WOOD[1], s: STONE[1], S: STONE[3] },
+    { o: OUTLINE, t: OUTLINE, e: OUTLINE, m: MULE.m, d: MULE.d, i: MULE.ear, n: MULE.nose, h: MULE.hoof, L: BURLAP[2], l: BURLAP[2], b: BURLAP[0], B: BURLAP[1], r: WOOD[1] },
   );
 }
 
@@ -1228,7 +1239,7 @@ export function buildTextures(scene: Phaser.Scene) {
   for (let f = 0; f < 2; f++) atlas.add(`duskprowler_${f}`, 20, 16, (g) => duskprowler(g, f));
   atlas.add('lost_pack', 16, 16, lostPack);
   atlas.add('slash', 16, 16, slash);
-  atlas.add('cart', 14, 10, handcart);
+  for (let f = 0; f < 2; f++) atlas.add(`mule_${f}`, 20, 16, (g) => packMule(g, f));
   atlas.add('arrow', 10, 3, arrowShot);
   atlas.add('firebolt', 9, 7, firebolt);
   atlas.add('burst', 24, 24, burstRing);

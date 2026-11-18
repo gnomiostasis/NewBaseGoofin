@@ -103,7 +103,7 @@ describe('production rates', () => {
   });
 });
 
-describe('carts', () => {
+describe('mules', () => {
   it('find a way home over open ground, to a chest or the camp', () => {
     const [w, x, y] = clearing();
     w.build[idx(w, x, y)] = Build.Mill;

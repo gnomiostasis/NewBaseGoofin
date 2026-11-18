@@ -1,6 +1,6 @@
 // Producers: buildings that work while you're away. The lumber mill saws wood from the standing
 // trees around it; the quarry cuts stone from the rocks around it. Neither uses up its trees or
-// rocks. What they make piles up in their hopper, and a little handcart hauls full loads home
+// rocks. What they make piles up in their hopper, and a pack mule hauls full loads home
 // along open ground to the nearest storage: the camp, or any chest.
 
 import { Prop, idx, inBounds, isBlocked, type World } from '../world/generate';
@@ -20,7 +20,7 @@ export interface ProducerDef {
   maxSources: number;
   /** With one source it takes this long to make one item; each extra source shares the work. */
   msPerItemOneSource: number;
-  /** It stops when its hopper holds this many items and the cart hasn't taken them yet. */
+  /** It stops when its hopper holds this many items and the mule hasn't taken them yet. */
   hopper: number;
   /** It stops when storage holds this much of its item. */
   cap: number;
@@ -57,12 +57,12 @@ export interface MillState {
   work: number;
   /** Items made since it was built. */
   made: number;
-  /** Items waiting in its hopper for the cart (missing in older saves). */
+  /** Items waiting in its hopper for the mule (missing in older saves). */
   held?: number;
 }
 
-/** A handcart carries this many items per trip, at this speed in pixels a second. */
-export const CART = { load: 10, speed: 42 };
+/** A pack mule carries this many items per trip, at this speed in pixels a second. */
+export const MULE = { load: 10, speed: 42 };
 
 /** Distance from the campfire, in tiles, that counts as delivered to camp. */
 const CAMP_DROP = 3;
@@ -101,7 +101,7 @@ export function millStatus(w: World, x: number, y: number, stored: number, def: 
 /**
  * Advances a producer by `dt` ms, dropping what it makes into its hopper (never past the hopper
  * or the storage cap). Returns how much it made. `hopper` overrides the hopper size, for time
- * away when the cart kept emptying it.
+ * away when the mule kept emptying it.
  */
 export function tickMill(m: MillState, status: MillStatus, dt: number, stored: number, def: ProducerDef = MILL, hopper = def.hopper): number {
   if (!status.ok) {
@@ -168,7 +168,7 @@ export function describeMill(s: MillStatus, made: number, def: ProducerDef = MIL
   const [one, many] = def.sourceName;
   if (!s.ok) {
     if (s.reason === 'no-source') return `${def.name}: no ${many} nearby to work`;
-    if (s.reason === 'hopper-full') return `${def.name}: hopper full (${def.hopper}). Its cart can't find a way home; clear a path to camp or a chest`;
+    if (s.reason === 'hopper-full') return `${def.name}: hopper full (${def.hopper}). Its mule can't find a way home; clear a path to camp or a chest`;
     return `${def.name}: storage is full of ${def.itemName} (${def.cap})`;
   }
   const secs = Math.round(s.msPerItem / 1000);

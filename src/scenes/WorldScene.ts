@@ -6,7 +6,7 @@ import { COMBAT, NIGHT } from '../game/creatures';
 import { CLASSES, attackFor, type AttackSpec } from '../game/classes';
 import { dayNumber, isNight } from '../game/daynight';
 import { LEVELING } from '../game/stats';
-import { CART, MILL, QUARRY, describeMill, millStatus, pathToStorage, perMinute, shortStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
+import { MULE, MILL, QUARRY, describeMill, millStatus, pathToStorage, perMinute, shortStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
 import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
@@ -247,7 +247,7 @@ export class WorldScene extends Phaser.Scene {
         const x = i % w.width;
         const y = (i - x) / w.width;
         const have = st.stash.count(def.item);
-        // While you were away its cart kept hauling, as long as it has a way home.
+        // While you were away its mule kept hauling, as long as it has a way home.
         const home = pathToStorage(w, x, y) !== null;
         const n = tickMill(m, millStatus(w, x, y, have, def, home ? 0 : m.held ?? 0), away, have, def, home ? Infinity : def.hopper);
         if (home) {
@@ -1346,45 +1346,45 @@ export class WorldScene extends Phaser.Scene {
     } else st.emit('toast', 'Your pack is full.');
   }
 
-  /** One handcart per mill or quarry, by its tile index, while it's out on a trip. */
-  private carts = new Map<
+  /** One pack mule per mill or quarry, by its tile index, while it's out on a trip. */
+  private mules = new Map<
     number,
-    { path: Array<[number, number]>; k: number; load: number; item: ItemId; back: boolean; img: Phaser.GameObjects.Image; cargo: Phaser.GameObjects.Image }
+    { path: Array<[number, number]>; k: number; load: number; item: ItemId; back: boolean; walked: number; img: Phaser.GameObjects.Image; cargo: Phaser.GameObjects.Image }
   >();
-  /** When a producer whose cart found no way home may look again. */
-  private cartRetry = new Map<number, number>();
+  /** When a producer whose mule found no way home may look again. */
+  private muleRetry = new Map<number, number>();
 
-  /** Sends a cart home with a full load (or whatever's there once the hopper is full). */
-  private dispatchCart(i: number, m: MillState, def: ProducerDef, time: number) {
+  /** Sends a mule home with a full load (or whatever's there once the hopper is full). */
+  private dispatchMule(i: number, m: MillState, def: ProducerDef, time: number) {
     const held = m.held ?? 0;
-    if (this.carts.has(i) || held < Math.min(CART.load, def.hopper) || time < (this.cartRetry.get(i) ?? 0)) return;
-    // Carts stay home at night.
+    if (this.mules.has(i) || held < Math.min(MULE.load, def.hopper) || time < (this.muleRetry.get(i) ?? 0)) return;
+    // Mules stay home at night.
     if (isNight(this.game_.clock)) return;
     const w = this.world;
     const x = i % w.width;
     const y = (i - x) / w.width;
     const tiles = pathToStorage(w, x, y);
     if (!tiles) {
-      this.cartRetry.set(i, time + 3000);
+      this.muleRetry.set(i, time + 3000);
       return;
     }
     const path = tiles.map((t): [number, number] => [(t % w.width) * TILE + 8, Math.floor(t / w.width) * TILE + 11]);
-    const load = Math.min(held, CART.load);
+    const load = Math.min(held, MULE.load);
     m.held = held - load;
     const [sx, sy] = path[0];
-    const img = this.add.image(sx, sy, 'atlas', 'cart').setOrigin(0.5, 1);
-    const cargo = this.add.image(sx, sy - 7, 'atlas', `item_${def.item}`).setScale(0.5);
-    this.carts.set(i, { path, k: 0, load, item: def.item, back: false, img, cargo });
+    const img = this.add.image(sx, sy, 'atlas', 'mule_0').setOrigin(0.5, 1);
+    const cargo = this.add.image(sx - 2, sy - 13, 'atlas', `item_${def.item}`).setScale(0.5);
+    this.mules.set(i, { path, k: 0, load, item: def.item, back: false, walked: 0, img, cargo });
   }
 
-  /** Carts roll along their path; at storage they unload, then head back. */
-  private updateCarts(delta: number) {
+  /** Mules plod along their path; at storage they unload, then head back. */
+  private updateMules(delta: number) {
     const st = this.game_;
     const view = this.cameras.main.worldView;
-    // At night a cart on the road stops where it is and waits for morning.
+    // At night a mule on the road stops where it is and waits for morning.
     if (isNight(st.clock)) return;
-    for (const [i, c] of this.carts) {
-      let step = (CART.speed * Math.min(delta, 100)) / 1000;
+    for (const [i, c] of this.mules) {
+      let step = (MULE.speed * Math.min(delta, 100)) / 1000;
       while (step > 0) {
         const [tx, ty] = c.path[c.k];
         const dx = tx - c.img.x;
@@ -1393,10 +1393,12 @@ export class WorldScene extends Phaser.Scene {
         if (d > step) {
           c.img.x += (dx / d) * step;
           c.img.y += (dy / d) * step;
+          c.walked += step;
           if (Math.abs(dx) > 0.5) c.img.setFlipX(dx < 0);
           step = 0;
         } else {
           c.img.setPosition(tx, ty);
+          c.walked += d;
           step -= d;
           if (c.k < c.path.length - 1) {
             c.k++;
@@ -1412,13 +1414,15 @@ export class WorldScene extends Phaser.Scene {
           } else {
             c.img.destroy();
             c.cargo.destroy();
-            this.carts.delete(i);
+            this.mules.delete(i);
           }
           break;
         }
       }
       c.img.setDepth(c.img.y);
-      c.cargo.setPosition(c.img.x, c.img.y - 7).setDepth(c.img.y + 0.1);
+      // Legs swap every few pixels walked; the load rides on top of the pack.
+      c.img.setFrame(`mule_${Math.floor(c.walked / 4) % 2}`);
+      c.cargo.setPosition(c.img.x + (c.img.flipX ? 2 : -2), c.img.y - 13).setDepth(c.img.y + 0.1);
     }
   }
 
@@ -1440,28 +1444,28 @@ export class WorldScene extends Phaser.Scene {
       for (const [i, m] of map) {
         const x = i % w.width;
         const y = (i - x) / w.width;
-        const stored = st.stash.count(def.item) + this.inCarts(def.item);
+        const stored = st.stash.count(def.item) + this.inMules(def.item);
         const status = millStatus(w, x, y, stored, def, m.held ?? 0);
         this.production[def.item] = (this.production[def.item] ?? 0) + perMinute(status);
         if (view.contains(x * TILE + 8, y * TILE)) {
           let text = shortStatus(status, def);
           const night = isNight(st.clock);
-          if (!status.ok && status.reason === 'hopper-full' && (this.carts.has(i) || night)) text = night ? 'Hopper full: cart waits for morning' : 'Hopper full: waiting for the cart';
-          if (status.ok) text += ` · ${m.held ?? 0}/${def.hopper}${night ? ' · cart waits for morning' : ''}`;
-          this.producerLabels.push({ x: x * TILE + 8, y: (y + 1) * TILE - 30, text, ok: status.ok || this.carts.has(i) || night });
+          if (!status.ok && status.reason === 'hopper-full' && (this.mules.has(i) || night)) text = night ? 'Hopper full: mule waits for morning' : 'Hopper full: waiting for the mule';
+          if (status.ok) text += ` · ${m.held ?? 0}/${def.hopper}${night ? ' · mule waits for morning' : ''}`;
+          this.producerLabels.push({ x: x * TILE + 8, y: (y + 1) * TILE - 30, text, ok: status.ok || this.mules.has(i) || night });
         }
         tickMill(m, status, delta, stored, def);
-        this.dispatchCart(i, m, def, time);
+        this.dispatchMule(i, m, def, time);
         const img = this.buildObjects.get(i)?.find((o) => o.frame.name.startsWith(base));
         if (img) img.setFrame(status.ok ? [base, `${base}_1`, `${base}_2`, `${base}_3`][Math.floor(time / speed) % 4] : base);
       }
     }
   }
 
-  /** Items riding in carts right now, so mills don't overshoot the storage cap. */
-  private inCarts(item: ItemId) {
+  /** Items riding in mules right now, so mills don't overshoot the storage cap. */
+  private inMules(item: ItemId) {
     let n = 0;
-    for (const c of this.carts.values()) if (c.item === item && !c.back) n += c.load;
+    for (const c of this.mules.values()) if (c.item === item && !c.back) n += c.load;
     return n;
   }
 
@@ -1654,7 +1658,7 @@ export class WorldScene extends Phaser.Scene {
     this.creatures.update(time);
     this.updateShots(time, delta);
     this.updateMills(time, delta);
-    this.updateCarts(delta);
+    this.updateMules(delta);
     this.updateGhost();
     this.updateDoors();
 
