@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Build } from '../src/game/build';
-import { MILL, QUARRY, millStatus, msPerItem, perMinute, shortStatus, sourcesNear, tickMill, treesNear, type MillState } from '../src/game/mill';
+import { MILL, QUARRY, millStatus, msPerItem, pathToStorage, perMinute, shortStatus, sourcesNear, tickMill, treesNear, type MillState } from '../src/game/mill';
 import { Prop, generateWorld, idx, isBlocked, type World } from '../src/world/generate';
 import { GATHER } from '../src/game/gather';
 
@@ -26,45 +26,43 @@ describe('lumber mill', () => {
     expect(isBlocked(w, x, y)).toBe(true);
   });
 
-  it('needs trees and a chest before it works', () => {
+  it('works as soon as it has trees: no chest needed', () => {
     const [w, x, y] = clearing();
     w.build[idx(w, x, y)] = Build.Mill;
     expect(millStatus(w, x, y, 0)).toMatchObject({ ok: false, reason: 'no-source' });
     w.prop[idx(w, x + 2, y - 1)] = Prop.Tree;
-    expect(millStatus(w, x, y, 0)).toMatchObject({ ok: false, reason: 'no-chest' });
-    w.build[idx(w, x - 4, y)] = Build.Chest; // too far
-    expect(millStatus(w, x, y, 0)).toMatchObject({ ok: false, reason: 'no-chest' });
-    w.build[idx(w, x - 1, y + 1)] = Build.Chest;
-    expect(millStatus(w, x, y, 0)).toMatchObject({ ok: true, sources: 1, chest: idx(w, x - 1, y + 1) });
+    expect(millStatus(w, x, y, 0)).toMatchObject({ ok: true, sources: 1 });
   });
 
-  it('fills a chest with wood over time, faster with more trees', () => {
+  it('fills its hopper over time, faster with more trees', () => {
     const [w, x, y] = clearing();
-    w.build[idx(w, x + 1, y)] = Build.Chest;
     w.prop[idx(w, x, y - 2)] = Prop.Tree;
     const one = fresh();
-    let wood = 0;
-    for (let t = 0; t < 120_000; t += 16) wood += tickMill(one, millStatus(w, x, y, wood), 16, wood);
-    expect(wood).toBe(Math.floor(120_000 / MILL.msPerItemOneSource));
+    for (let t = 0; t < 120_000; t += 16) tickMill(one, millStatus(w, x, y, 0, MILL, one.held), 16, 0);
+    expect(one.held).toBe(Math.floor(120_000 / MILL.msPerItemOneSource));
 
     for (let k = 0; k < 10; k++) w.prop[idx(w, x - 3 + (k % 7), y + 3)] = Prop.Tree;
     expect(treesNear(w, x, y)).toBe(8);
     const many = fresh();
-    wood = 0;
-    for (let t = 0; t < 120_000; t += 16) wood += tickMill(many, millStatus(w, x, y, wood), 16, wood);
-    expect(wood).toBe(Math.floor(120_000 / msPerItem(MILL.maxSources)));
-    expect(many.made).toBe(wood);
+    for (let t = 0; t < 120_000; t += 16) tickMill(many, millStatus(w, x, y, 0, MILL, many.held), 16, 0);
+    expect(many.held).toBe(Math.floor(120_000 / msPerItem(MILL.maxSources)));
+    expect(many.made).toBe(many.held);
   });
 
-  it('stops at the storage cap and when its trees are cut down', () => {
+  it('stops when the hopper is full, at the storage cap, and when its trees are cut down', () => {
     const [w, x, y] = clearing();
-    w.build[idx(w, x + 1, y)] = Build.Chest;
     w.prop[idx(w, x, y - 2)] = Prop.Tree;
     const m = fresh();
-    expect(tickMill(m, millStatus(w, x, y, MILL.cap - 1), 10 * MILL.msPerItemOneSource, MILL.cap - 1)).toBe(1);
-    expect(millStatus(w, x, y, MILL.cap)).toMatchObject({ ok: false, reason: 'full' });
+    // A long time with nobody hauling: the hopper fills and it stops.
+    tickMill(m, millStatus(w, x, y, 0), 1000 * MILL.msPerItemOneSource, 0);
+    expect(m.held).toBe(MILL.hopper);
+    expect(millStatus(w, x, y, 0, MILL, m.held)).toMatchObject({ ok: false, reason: 'hopper-full' });
+    // Storage plus hopper never passes the cap.
+    const n = fresh();
+    expect(tickMill(n, millStatus(w, x, y, MILL.cap - 1), 10 * MILL.msPerItemOneSource, MILL.cap - 1)).toBe(1);
+    expect(millStatus(w, x, y, MILL.cap - 1, MILL, 1)).toMatchObject({ ok: false, reason: 'full' });
     w.prop[idx(w, x, y - 2)] = Prop.Stump;
-    expect(tickMill(m, millStatus(w, x, y, 0), MILL.msPerItemOneSource, 0)).toBe(0);
+    expect(tickMill(fresh(), millStatus(w, x, y, 0), MILL.msPerItemOneSource, 0)).toBe(0);
   });
 });
 
@@ -83,12 +81,10 @@ describe('quarry', () => {
     expect(millStatus(w, x, y, 0, QUARRY)).toMatchObject({ ok: false, reason: 'no-source' });
     w.prop[idx(w, x + 2, y)] = Prop.Rock;
     w.prop[idx(w, x - 2, y)] = Prop.Rock;
-    w.build[idx(w, x, y + 1)] = Build.Chest;
     expect(sourcesNear(w, x, y, QUARRY)).toBe(2);
     const q = fresh();
-    let stone = 0;
-    for (let t = 0; t < 120_000; t += 16) stone += tickMill(q, millStatus(w, x, y, stone, QUARRY), 16, stone, QUARRY);
-    expect(stone).toBe(Math.floor(120_000 / msPerItem(2, QUARRY)));
+    for (let t = 0; t < 120_000; t += 16) tickMill(q, millStatus(w, x, y, 0, QUARRY, q.held), 16, 0, QUARRY);
+    expect(q.held).toBe(Math.floor(120_000 / msPerItem(2, QUARRY)));
     expect(w.prop[idx(w, x + 2, y)]).toBe(Prop.Rock);
     expect(millStatus(w, x, y, QUARRY.cap, QUARRY)).toMatchObject({ ok: false, reason: 'full' });
   });
@@ -96,13 +92,47 @@ describe('quarry', () => {
 
 describe('production rates', () => {
   it('reports items a minute, or why it stopped', () => {
-    const ok = { ok: true as const, sources: 6, msPerItem: msPerItem(6, MILL), chest: 0 };
+    const ok = { ok: true as const, sources: 6, msPerItem: msPerItem(6, MILL) };
     expect(perMinute(ok)).toBeCloseTo(7.5);
     expect(shortStatus(ok, MILL)).toBe('+7.5 wood/min');
-    expect(shortStatus({ ok: true, sources: 1, msPerItem: msPerItem(1, QUARRY), chest: 0 }, QUARRY)).toBe('+1 stone/min');
-    const stopped = { ok: false as const, reason: 'no-chest' as const, sources: 3 };
+    expect(shortStatus({ ok: true, sources: 1, msPerItem: msPerItem(1, QUARRY) }, QUARRY)).toBe('+1 stone/min');
+    const stopped = { ok: false as const, reason: 'hopper-full' as const, sources: 3 };
     expect(perMinute(stopped)).toBe(0);
-    expect(shortStatus(stopped, QUARRY)).toBe('Stopped: needs a chest');
+    expect(shortStatus(stopped, QUARRY)).toBe('Stopped: no way home');
     expect(shortStatus({ ok: false, reason: 'no-source', sources: 0 }, MILL)).toBe('Stopped: no trees');
+  });
+});
+
+describe('carts', () => {
+  it('find a way home over open ground, to a chest or the camp', () => {
+    const [w, x, y] = clearing();
+    w.build[idx(w, x, y)] = Build.Mill;
+    w.build[idx(w, x + 5, y)] = Build.Chest;
+    const path = pathToStorage(w, x, y)!;
+    expect(path).not.toBeNull();
+    const last = path[path.length - 1];
+    expect(last).toBe(idx(w, x + 4, y));
+    // Every step is open ground and next to the one before.
+    for (let k = 1; k < path.length; k++) {
+      const [a, b] = [path[k - 1], path[k]];
+      expect(Math.abs((a % w.width) - (b % w.width)) + Math.abs(Math.floor(a / w.width) - Math.floor(b / w.width))).toBe(1);
+      expect(isBlocked(w, b % w.width, Math.floor(b / w.width))).toBe(false);
+    }
+  });
+
+  it('are stuck when walls close the mill in', () => {
+    const [w, x, y] = clearing();
+    w.build[idx(w, x, y)] = Build.Mill;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) w.build[idx(w, x + dx, y + dy)] = Build.Wall;
+    expect(pathToStorage(w, x, y)).toBeNull();
+  });
+
+  it('reach camp from far away without a chest', () => {
+    const [w, x, y] = clearing();
+    w.build[idx(w, x, y)] = Build.Mill;
+    const path = pathToStorage(w, x, y);
+    expect(path).not.toBeNull();
+    const last = path![path!.length - 1];
+    expect(Math.hypot((last % w.width) - w.campX, Math.floor(last / w.width) - w.campY)).toBeLessThanOrEqual(3);
   });
 });

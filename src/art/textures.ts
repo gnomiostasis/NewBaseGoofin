@@ -851,6 +851,28 @@ function classMage(g: Ctx) {
   );
 }
 
+function handcart(g: Ctx) {
+  // 14 x 10: a little wooden handcart with one big wheel and a pull handle, facing right.
+  sprite(
+    g,
+    0,
+    0,
+    [
+      '..............',
+      'oooooooooo....',
+      'owwwwwwwwo....',
+      'oWWWWWWWWoohhh',
+      'owwwwwwwwo....',
+      'oooooooooo....',
+      '...ooooo......',
+      '..osSsSso.....',
+      '..oSsosSo.....',
+      '...ooooo......',
+    ],
+    { o: OUTLINE, w: WOOD[0], W: WOOD[2], h: WOOD[1], s: STONE[1], S: STONE[3] },
+  );
+}
+
 function slash(g: Ctx) {
   for (let a = -60; a <= 60; a += 6) {
     const r = (a * Math.PI) / 180;
@@ -1206,6 +1228,7 @@ export function buildTextures(scene: Phaser.Scene) {
   for (let f = 0; f < 2; f++) atlas.add(`duskprowler_${f}`, 20, 16, (g) => duskprowler(g, f));
   atlas.add('lost_pack', 16, 16, lostPack);
   atlas.add('slash', 16, 16, slash);
+  atlas.add('cart', 14, 10, handcart);
   atlas.add('arrow', 10, 3, arrowShot);
   atlas.add('firebolt', 9, 7, firebolt);
   atlas.add('burst', 24, 24, burstRing);

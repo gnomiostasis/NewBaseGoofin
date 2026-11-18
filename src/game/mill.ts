@@ -1,8 +1,9 @@
-// Producers: buildings that work while you're away and put what they make in a nearby chest.
-// The lumber mill saws wood from the standing trees around it; the quarry cuts stone from
-// the rocks around it. Neither uses up its trees or rocks.
+// Producers: buildings that work while you're away. The lumber mill saws wood from the standing
+// trees around it; the quarry cuts stone from the rocks around it. Neither uses up its trees or
+// rocks. What they make piles up in their hopper, and a little handcart hauls full loads home
+// along open ground to the nearest storage: the camp, or any chest.
 
-import { Prop, idx, inBounds, type World } from '../world/generate';
+import { Prop, idx, inBounds, isBlocked, type World } from '../world/generate';
 import { Build } from './build';
 import type { ItemId } from './items';
 
@@ -19,8 +20,8 @@ export interface ProducerDef {
   maxSources: number;
   /** With one source it takes this long to make one item; each extra source shares the work. */
   msPerItemOneSource: number;
-  /** A chest must be within this many tiles to take what it makes. */
-  chestRadius: number;
+  /** It stops when its hopper holds this many items and the cart hasn't taken them yet. */
+  hopper: number;
   /** It stops when storage holds this much of its item. */
   cap: number;
 }
@@ -34,7 +35,7 @@ export const MILL: ProducerDef = {
   radius: 3,
   maxSources: 6,
   msPerItemOneSource: 48_000,
-  chestRadius: 3,
+  hopper: 20,
   cap: 150,
 };
 
@@ -47,7 +48,7 @@ export const QUARRY: ProducerDef = {
   radius: 3,
   maxSources: 4,
   msPerItemOneSource: 60_000,
-  chestRadius: 3,
+  hopper: 20,
   cap: 200,
 };
 
@@ -56,11 +57,19 @@ export interface MillState {
   work: number;
   /** Items made since it was built. */
   made: number;
+  /** Items waiting in its hopper for the cart (missing in older saves). */
+  held?: number;
 }
 
+/** A handcart carries this many items per trip, at this speed in pixels a second. */
+export const CART = { load: 10, speed: 42 };
+
+/** Distance from the campfire, in tiles, that counts as delivered to camp. */
+const CAMP_DROP = 3;
+
 export type MillStatus =
-  | { ok: true; sources: number; msPerItem: number; chest: number }
-  | { ok: false; reason: 'no-source' | 'no-chest' | 'full'; sources: number };
+  | { ok: true; sources: number; msPerItem: number }
+  | { ok: false; reason: 'no-source' | 'hopper-full' | 'full'; sources: number };
 
 /** Sources (trees for a mill, rocks for a quarry) around tile (x, y). */
 export function sourcesNear(w: World, x: number, y: number, def: ProducerDef = MILL): number {
@@ -76,56 +85,90 @@ export function sourcesNear(w: World, x: number, y: number, def: ProducerDef = M
 
 export const treesNear = (w: World, x: number, y: number) => sourcesNear(w, x, y, MILL);
 
-/** The closest chest to tile (x, y) within reach, as a tile index, or -1. */
-export function chestNear(w: World, x: number, y: number, r = MILL.chestRadius): number {
-  let best = -1;
-  let bestD = Infinity;
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r; dx <= r; dx++) {
-      if (!inBounds(w, x + dx, y + dy)) continue;
-      const i = idx(w, x + dx, y + dy);
-      const d = dx * dx + dy * dy;
-      if (w.build[i] === Build.Chest && d < bestD) {
-        best = i;
-        bestD = d;
-      }
-    }
-  }
-  return best;
-}
-
 export function msPerItem(sources: number, def: ProducerDef = MILL): number {
   return def.msPerItemOneSource / Math.min(sources, def.maxSources);
 }
 
-export function millStatus(w: World, x: number, y: number, stored: number, def: ProducerDef = MILL): MillStatus {
+/** `stored` is how much of its item is in storage; `held` is what's already in its hopper. */
+export function millStatus(w: World, x: number, y: number, stored: number, def: ProducerDef = MILL, held = 0): MillStatus {
   const sources = sourcesNear(w, x, y, def);
   if (sources === 0) return { ok: false, reason: 'no-source', sources };
-  const chest = chestNear(w, x, y, def.chestRadius);
-  if (chest < 0) return { ok: false, reason: 'no-chest', sources };
-  if (stored >= def.cap) return { ok: false, reason: 'full', sources };
-  return { ok: true, sources, msPerItem: msPerItem(sources, def), chest };
+  if (stored + held >= def.cap) return { ok: false, reason: 'full', sources };
+  if (held >= def.hopper) return { ok: false, reason: 'hopper-full', sources };
+  return { ok: true, sources, msPerItem: msPerItem(sources, def) };
 }
 
-/** Advances a producer by `dt` ms. Returns how much it made (never past the cap). */
-export function tickMill(m: MillState, status: MillStatus, dt: number, stored: number, def: ProducerDef = MILL): number {
+/**
+ * Advances a producer by `dt` ms, dropping what it makes into its hopper (never past the hopper
+ * or the storage cap). Returns how much it made. `hopper` overrides the hopper size, for time
+ * away when the cart kept emptying it.
+ */
+export function tickMill(m: MillState, status: MillStatus, dt: number, stored: number, def: ProducerDef = MILL, hopper = def.hopper): number {
   if (!status.ok) {
     m.work = 0;
     return 0;
   }
+  const held = m.held ?? 0;
   m.work += dt;
   let made = Math.floor(m.work / status.msPerItem);
   m.work -= made * status.msPerItem;
-  made = Math.min(made, def.cap - stored);
+  made = Math.max(0, Math.min(made, def.cap - stored - held, hopper - held));
+  m.held = held + made;
   m.made += made;
   return made;
+}
+
+/**
+ * The shortest walk over open ground from beside the producer at (x, y) to storage: within
+ * CAMP_DROP tiles of the campfire, or next to a chest. Returns tile indices (first step to last),
+ * or null if walls or water cut it off.
+ */
+export function pathToStorage(w: World, x: number, y: number): number[] | null {
+  const n = w.width * w.height;
+  const from = new Int32Array(n).fill(-2);
+  const queue: number[] = [];
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  for (const [dx, dy] of dirs) {
+    if (isBlocked(w, x + dx, y + dy)) continue;
+    const i = idx(w, x + dx, y + dy);
+    from[i] = -1;
+    queue.push(i);
+  }
+  const atStorage = (tx: number, ty: number) => {
+    if (Math.hypot(tx - w.campX, ty - w.campY) <= CAMP_DROP) return true;
+    for (const [dx, dy] of dirs) if (inBounds(w, tx + dx, ty + dy) && w.build[idx(w, tx + dx, ty + dy)] === Build.Chest) return true;
+    return false;
+  };
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q];
+    const tx = i % w.width;
+    const ty = (i - tx) / w.width;
+    if (atStorage(tx, ty)) {
+      const path: number[] = [];
+      for (let k = i; k !== -1; k = from[k]) path.push(k);
+      return path.reverse();
+    }
+    for (const [dx, dy] of dirs) {
+      if (isBlocked(w, tx + dx, ty + dy)) continue;
+      const ni = idx(w, tx + dx, ty + dy);
+      if (from[ni] !== -2) continue;
+      from[ni] = i;
+      queue.push(ni);
+    }
+  }
+  return null;
 }
 
 export function describeMill(s: MillStatus, made: number, def: ProducerDef = MILL): string {
   const [one, many] = def.sourceName;
   if (!s.ok) {
     if (s.reason === 'no-source') return `${def.name}: no ${many} nearby to work`;
-    if (s.reason === 'no-chest') return `${def.name}: needs a chest within ${def.chestRadius} tiles`;
+    if (s.reason === 'hopper-full') return `${def.name}: hopper full (${def.hopper}). Its cart can't find a way home; clear a path to camp or a chest`;
     return `${def.name}: storage is full of ${def.itemName} (${def.cap})`;
   }
   const secs = Math.round(s.msPerItem / 1000);
@@ -145,6 +188,6 @@ export const rateLabel = (n: number) => (Math.round(n * 10) / 10).toString();
 export function shortStatus(s: MillStatus, def: ProducerDef = MILL): string {
   if (s.ok) return `+${rateLabel(perMinute(s))} ${def.itemName}/min`;
   if (s.reason === 'no-source') return `Stopped: no ${def.sourceName[1]}`;
-  if (s.reason === 'no-chest') return 'Stopped: needs a chest';
+  if (s.reason === 'hopper-full') return 'Stopped: no way home';
   return 'Stopped: storage full';
 }
