@@ -41,7 +41,7 @@ Controls:
 | WASD / arrows | Walk |
 | Shift | Run (uses energy) |
 | Left click | Use what you click on next to you, or what's in front of you: gather it (hold to keep chopping or mining), store materials in a chest or the camp crate, rest, sleep, open the workbench |
-| Right click | Swing your weapon toward the mouse; hold to keep swinging (uses energy; an axe hits harder) |
+| Right click | Attack toward the mouse; hold to keep attacking (uses energy). Fighters swing an axe, archers shoot arrows, mages hurl firebolts |
 | Space or J | Swing at whatever is in front of you |
 | F | Eat (mushrooms first, then berries) |
 | C | Hand-crafting (then 1 or 2 to craft) |
@@ -52,6 +52,13 @@ Controls:
 | M | Show or hide the map |
 
 Trees you chop grow back after about 8 minutes, and picked berry bushes after 2 and a half.
+
+When a run begins you choose a class, and it stays with you for that run:
+
+- **Fighter**: hard-hitting axe swings with a wider reach, +30 max health, and takes 25% less damage.
+- **Archer**: shoots arrows that fly about 9 tiles, walks 12% faster, and arrows hit harder as you level.
+- **Mage**: hurls firebolts that burst and hit everything nearby, gets energy back 35% faster, and
+  carries a brighter light at night.
 
 Your first job: pick up sticks and stones and pull some grass near camp, then craft a stone axe.
 

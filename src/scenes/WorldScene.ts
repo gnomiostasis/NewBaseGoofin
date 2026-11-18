@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { PACK, PLAYER, SPRINT_MULTIPLIER, SURVIVAL, TILE } from '../config';
 import { NightSystem, type Light } from './NightSystem';
 import { CreatureSystem } from './CreatureSystem';
-import { COMBAT, NIGHT, playerDamage } from '../game/creatures';
+import { COMBAT, NIGHT } from '../game/creatures';
+import { CLASSES, attackFor, type AttackSpec } from '../game/classes';
 import { dayNumber, isNight, nextMorning } from '../game/daynight';
 import { LEVELING } from '../game/stats';
 import { MILL, QUARRY, describeMill, millStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
@@ -15,6 +16,8 @@ import {
   idx,
   inBounds,
   isBlocked,
+  isBlockingProp,
+  BLOCKING_BUILDS,
   isGlowcap,
   type CampObject,
   type CampObjectKind,
@@ -845,18 +848,23 @@ export class WorldScene extends Phaser.Scene {
     const st = this.game_;
     if (time < this.nextAttack || this.busy) return;
     if (aim) this.faceTile(Math.floor(aim.x / TILE), Math.floor(aim.y / TILE));
-    if (!spendStamina(st.vitals, COMBAT.swingStamina)) {
-      st.emit('toast', 'Too tired to swing.');
+    const spec = attackFor(st.progress.cls, st.mods, st.pack.toolPower('axe'), st.progress.level);
+    if (!spendStamina(st.vitals, spec.stamina)) {
+      st.emit('toast', spec.kind === 'swing' ? 'Too tired to swing.' : spec.kind === 'arrow' ? 'Too tired to draw your bow.' : 'Too tired to cast.');
       this.nextAttack = time + 400;
       return;
     }
-    this.nextAttack = time + COMBAT.swingCooldownMs;
+    this.nextAttack = time + spec.cooldownMs;
     const cx = this.player.x;
     const cy = this.player.body.center.y - 3;
     let [dx, dy] = DIR_STEP[this.facing];
     if (aim) {
       const len = Math.hypot(aim.x - cx, aim.y - cy) || 1;
       [dx, dy] = [(aim.x - cx) / len, (aim.y - cy) / len];
+    }
+    if (spec.kind !== 'swing') {
+      this.shoot(spec, cx, cy, dx, dy);
+      return;
     }
     const slash = this.add
       .image(cx + dx * 9, cy + dy * 9, 'atlas', 'slash')
@@ -865,11 +873,79 @@ export class WorldScene extends Phaser.Scene {
     this.tweens.add({ targets: slash, alpha: 0, duration: 160, onComplete: () => slash.destroy() });
     this.tweens.add({ targets: this.player, x: this.player.x + dx * 2, y: this.player.y + dy * 2, duration: 60, yoyo: true });
     this.sfx.swing();
-    const damage = playerDamage(st.mods, st.pack.toolPower('axe'));
-    if (this.creatures.hit(cx, cy, dx, dy, COMBAT.reach, damage, time) > 0) {
+    if (this.creatures.hit(cx, cy, dx, dy, spec.range, spec.damage, time) > 0) {
       this.sfx.hit();
       this.nudge(50, 1);
     }
+  }
+
+  /** Arrows and firebolts in flight. */
+  private shots: Array<{ img: Phaser.GameObjects.Image; vx: number; vy: number; left: number; spec: AttackSpec }> = [];
+
+  /** Looses an arrow or a firebolt from (x, y) along (dx, dy). */
+  private shoot(spec: AttackSpec, x: number, y: number, dx: number, dy: number) {
+    const frame = spec.kind === 'arrow' ? 'arrow' : 'firebolt';
+    const img = this.add.image(x + dx * 6, y + dy * 6, 'atlas', frame).setRotation(Math.atan2(dy, dx)).setDepth(200003);
+    this.tweens.add({ targets: this.player, x: this.player.x - dx * 1.5, y: this.player.y - dy * 1.5, duration: 50, yoyo: true });
+    this.shots.push({ img, vx: dx * spec.speed, vy: dy * spec.speed, left: spec.range, spec });
+    if (spec.kind === 'arrow') this.sfx.swing();
+    else this.sfx.cast();
+  }
+
+  /** Moves shots along; they stop at the first creature, tree, rock or wall they meet. */
+  private updateShots(time: number, delta: number) {
+    const dt = Math.min(delta, 50) / 1000;
+    for (const s of [...this.shots]) {
+      const step = Math.hypot(s.vx, s.vy) * dt;
+      s.img.x += s.vx * dt;
+      s.img.y += s.vy * dt;
+      s.left -= step;
+      if (s.spec.kind === 'firebolt' && Math.random() < 0.6) this.ember(s.img.x, s.img.y);
+      const target = this.creatures.nearest(s.img.x, s.img.y + 2, 9);
+      const tx = Math.floor(s.img.x / TILE);
+      const ty = Math.floor(s.img.y / TILE);
+      const solid = this.shotBlocked(tx, ty);
+      if (!target && !solid && s.left > 0) continue;
+      this.shots.splice(this.shots.indexOf(s), 1);
+      const { x, y } = s.img;
+      if (s.spec.kind === 'firebolt') {
+        s.img.destroy();
+        this.burst(x, y, s.spec, time);
+      } else {
+        if (target) {
+          this.creatures.damage(target, s.spec.damage, x - s.vx * 0.05, y - s.vy * 0.05, time, 120);
+          this.sfx.hit();
+          s.img.destroy();
+        } else {
+          // A miss sticks where it lands for a moment, then fades.
+          this.tweens.add({ targets: s.img, alpha: 0, delay: 250, duration: 300, onComplete: () => s.img.destroy() });
+        }
+      }
+    }
+  }
+
+  /** Trees, rocks, bushes and builds stop shots; water and open ground don't. */
+  private shotBlocked(tx: number, ty: number): boolean {
+    const w = this.world;
+    if (tx < 0 || ty < 0 || tx >= w.width || ty >= w.height) return true;
+    const i = ty * w.width + tx;
+    return isBlockingProp(w.prop[i] as Prop) || BLOCKING_BUILDS.has(w.build[i]);
+  }
+
+  /** A firebolt bursts, hurting every creature within its splash. */
+  private burst(x: number, y: number, spec: AttackSpec, time: number) {
+    const ring = this.add.image(x, y, 'atlas', 'burst').setDepth(200003).setScale(0.5);
+    this.tweens.add({ targets: ring, scale: (spec.splash * 2) / 24, alpha: 0, duration: 260, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+    for (let k = 0; k < 6; k++) this.ember(x + Phaser.Math.Between(-6, 6), y + Phaser.Math.Between(-6, 6));
+    if (this.creatures.blast(x, y, spec.splash, spec.damage, time) > 0) {
+      this.sfx.hit();
+      this.nudge(60, 1);
+    }
+  }
+
+  private ember(x: number, y: number) {
+    const e = this.add.rectangle(x, y, 2, 2, Math.random() < 0.5 ? 0xffb347 : 0xff6a3a).setDepth(200002);
+    this.tweens.add({ targets: e, y: y - Phaser.Math.Between(3, 8), alpha: 0, duration: 320, onComplete: () => e.destroy() });
   }
 
   /** A small camera shake of at most `px` screen pixels. Phaser scales shake by view width and zoom, so convert. */
@@ -882,6 +958,7 @@ export class WorldScene extends Phaser.Scene {
     const st = this.game_;
     if (time < this.invulnUntil || this.busy) return;
     this.invulnUntil = time + COMBAT.invulnMs;
+    damage = Math.max(1, Math.round(damage * st.mods.damageTakenMul));
     st.vitals.health = Math.max(0, st.vitals.health - damage);
     const a = Math.atan2(this.player.body.center.y - fromY, this.player.x - fromX);
     this.player.setVelocity(Math.cos(a) * 190, Math.sin(a) * 190);
@@ -1262,6 +1339,8 @@ export class WorldScene extends Phaser.Scene {
     }
     this.playerLight.x = this.player.x;
     this.playerLight.y = this.player.body.center.y - 4;
+    const cls = this.game_.progress.cls;
+    this.playerLight.r = 40 + (cls ? CLASSES[cls].glow : 0);
     this.night.update(st.clock, time);
   }
 
@@ -1494,6 +1573,7 @@ export class WorldScene extends Phaser.Scene {
     this.updateDayNight(time, delta);
     this.updateDefenses(time);
     this.creatures.update(time);
+    this.updateShots(time, delta);
     this.updateMills(time, delta);
     this.updateGhost();
     this.updateDoors();

@@ -6,6 +6,7 @@ import { freshVitals, type Vitals } from './survival';
 import { Sfx } from './sfx';
 import { Progress, type StatMods } from './stats';
 import type { MillState } from './mill';
+import { withClass } from './classes';
 
 /** Events the world raises for the HUD to show. */
 export interface GameEvents {
@@ -76,7 +77,7 @@ export class GameState {
   }
 
   get mods(): StatMods {
-    return this.progress.mods;
+    return withClass(this.progress.mods, this.progress.cls);
   }
 
   addXp(n: number) {

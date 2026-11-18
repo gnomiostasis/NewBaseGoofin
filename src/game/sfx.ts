@@ -85,6 +85,12 @@ export class Sfx {
     this.noise(0.07, 0.12, 2500);
   }
 
+  /** A firebolt leaving your hands: a rising whoosh. */
+  cast() {
+    this.tone(330, 0.16, 'triangle', 0.06, 660);
+    this.noise(0.1, 0.08, 1800);
+  }
+
   hit() {
     this.tone(220, 0.09, 'square', 0.08, 120);
     this.noise(0.06, 0.25, 1200);
