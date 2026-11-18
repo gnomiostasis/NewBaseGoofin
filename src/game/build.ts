@@ -35,11 +35,11 @@ export const BUILDABLES: BuildDef[] = [
   { kind: 'chest', name: 'Chest', cost: { wood: 4, stone: 1 }, blurb: 'Storage, shared with the camp stash' },
   { kind: 'bed', name: 'Bed', cost: { wood: 4, fiber: 4 }, blurb: 'Click it to wake here if you collapse' },
   { kind: 'workbench', name: 'Workbench', cost: { wood: 5, stone: 3 }, blurb: 'Crafts copper tools and a bigger pack' },
-  { kind: 'mill', name: 'Mill', cost: { wood: 10, stone: 6, copper_ore: 2 }, blurb: 'Saws wood from nearby trees into a chest' },
+  { kind: 'mill', name: 'Mill', cost: { wood: 10, stone: 6, copper_ore: 2 }, blurb: 'Saws wood from nearby trees; its cart hauls it home' },
   { kind: 'spikes', name: 'Spikes', cost: { wood: 2, stone: 2 }, blurb: 'Hurts and slows creatures that cross; you can walk over it' },
   { kind: 'torch', name: 'Torch', cost: { wood: 1, fiber: 1 }, blurb: 'Lights up the night around it' },
   { kind: 'turret', name: 'Turret', cost: { wood: 8, stone: 8 }, blurb: 'Shoots creatures in range; uses stone from storage as ammo' },
-  { kind: 'quarry', name: 'Quarry', cost: { wood: 10, stone: 4, copper_ore: 2 }, blurb: 'Cuts stone from nearby rocks into a chest' },
+  { kind: 'quarry', name: 'Quarry', cost: { wood: 10, stone: 4, copper_ore: 2 }, blurb: 'Cuts stone from nearby rocks; its cart hauls it home' },
 ];
 
 /** Spike traps and turrets: the numbers behind your defenses. */

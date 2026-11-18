@@ -72,8 +72,12 @@ where you fell; walk back and click it to pick it up. Everything you do earns XP
 (up to 10) gives a point to spend on a stat, so a zone that beat you once gets easier.
 
 A lumber mill (wood, stone and a little copper ore) saws wood from the standing trees within
-3 tiles and drops it into a chest within 3 tiles, even while you're far away. More trees means
-faster sawing, up to 6. It stops when storage holds 150 wood. Click a mill to see how it's doing.
+3 tiles, even while you're far away; a quarry does the same with rocks and stone. More trees
+(up to 6) or rocks (up to 4) means faster work. What they make drops into their hopper (20), and
+each one has a little handcart that hauls loads of 10 back home along open ground, to the camp or
+the nearest chest. Wall one in completely and its cart can't get out, so leave a gap or a door.
+Click a mill or quarry to empty its hopper into your pack. They stop when storage holds 150 wood
+or 200 stone.
 
 ## Other commands
 
@@ -102,5 +106,5 @@ faster sawing, up to 6. It stops when storage holds 150 wood. Click a mill to se
 2. **Gather and carry** (done): harvest trees, rocks and bushes; an inventory with a carry limit; health, hunger and stamina (hunger and sleeping were later removed; food now heals).
 3. **Build the base** (done): grid placement, walls, floors, chests, a bed and a workbench.
 4. **Danger and leveling** (done): creatures in the outer zones, melee combat, XP and four stats.
-5. **First automation** (done): a lumber mill that fills a chest with wood over time.
+5. **First automation** (done): a lumber mill that saws wood over time (its cart hauls it home).
 6. **Save, balance, share** (done): save and load, a title screen, tuning, a public link.

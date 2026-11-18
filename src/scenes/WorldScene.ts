@@ -6,7 +6,7 @@ import { COMBAT, NIGHT } from '../game/creatures';
 import { CLASSES, attackFor, type AttackSpec } from '../game/classes';
 import { dayNumber, isNight } from '../game/daynight';
 import { LEVELING } from '../game/stats';
-import { MILL, QUARRY, describeMill, millStatus, perMinute, shortStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
+import { CART, MILL, QUARRY, describeMill, millStatus, pathToStorage, perMinute, shortStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
 import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
@@ -247,8 +247,13 @@ export class WorldScene extends Phaser.Scene {
         const x = i % w.width;
         const y = (i - x) / w.width;
         const have = st.stash.count(def.item);
-        const n = tickMill(m, millStatus(w, x, y, have, def), away, have, def);
-        st.stash.add(def.item, n);
+        // While you were away its cart kept hauling, as long as it has a way home.
+        const home = pathToStorage(w, x, y) !== null;
+        const n = tickMill(m, millStatus(w, x, y, have, def, home ? 0 : m.held ?? 0), away, have, def, home ? Infinity : def.hopper);
+        if (home) {
+          st.stash.add(def.item, m.held ?? 0);
+          m.held = 0;
+        }
         made += n;
       }
       if (made > 0) parts.push(`your ${what} made ${made} ${def.itemName}`);
@@ -618,7 +623,12 @@ export class WorldScene extends Phaser.Scene {
     if (t.kind === 'build') {
       if (t.what === 'chest') return ['Store materials in chest', false];
       if (t.what === 'bed') return [this.game_.respawn?.[0] === t.tx && this.game_.respawn?.[1] === t.ty ? 'Your bed: you wake here if you collapse' : 'Wake here if you collapse', false];
-      if (t.what === 'mill' || t.what === 'quarry') return [this.millText(t.tx, t.ty), false];
+      if (t.what === 'mill' || t.what === 'quarry') {
+        const i = idx(this.world, t.tx, t.ty);
+        const held = (t.what === 'quarry' ? this.game_.quarries : this.game_.mills).get(i)?.held ?? 0;
+        if (held > 0) return [`Take ${held} ${t.what === 'quarry' ? 'stone' : 'wood'} from the hopper`, false];
+        return [this.millText(t.tx, t.ty), false];
+      }
       return ['Open the build and craft menu (workbench recipes)', false];
     }
     if (t.kind === 'camp') {
@@ -643,7 +653,7 @@ export class WorldScene extends Phaser.Scene {
     if (t.kind === 'build') {
       this.nextSwing = time + 400;
       if (t.what === 'chest') this.storeMaterials();
-      else if (t.what === 'mill' || t.what === 'quarry') st.emit('toast', this.millText(t.tx, t.ty));
+      else if (t.what === 'mill' || t.what === 'quarry') this.useProducer(t.tx, t.ty);
       else if (t.what === 'bed') {
         st.respawn = [t.tx, t.ty];
         st.emit('toast', 'You will wake up here if you collapse.');
@@ -1063,6 +1073,11 @@ export class WorldScene extends Phaser.Scene {
       this.chests.delete(i);
       this.setDoor(i, false);
       this.detachDefense(i);
+      // Whatever was waiting in a mill's or quarry's hopper goes into storage.
+      const held = st.mills.get(i)?.held ?? 0;
+      if (held) st.stash.add('wood', held);
+      const heldStone = st.quarries.get(i)?.held ?? 0;
+      if (heldStone) st.stash.add('stone', heldStone);
       st.mills.delete(i);
       st.quarries.delete(i);
       this.structureHp.delete(i);
@@ -1307,7 +1322,100 @@ export class WorldScene extends Phaser.Scene {
     const i = idx(this.world, x, y);
     const def = this.world.build[i] === Build.Quarry ? QUARRY : MILL;
     const m = (def === QUARRY ? st.quarries : st.mills).get(i);
-    return describeMill(millStatus(this.world, x, y, st.stash.count(def.item), def), m?.made ?? 0, def);
+    const held = m?.held ?? 0;
+    const text = describeMill(millStatus(this.world, x, y, st.stash.count(def.item), def, held), m?.made ?? 0, def);
+    return held > 0 ? `${text} · ${held} in its hopper` : text;
+  }
+
+  /** Clicking a mill or quarry empties its hopper into your pack, or tells you how it's doing. */
+  private useProducer(x: number, y: number) {
+    const st = this.game_;
+    const i = idx(this.world, x, y);
+    const def = this.world.build[i] === Build.Quarry ? QUARRY : MILL;
+    const m = (def === QUARRY ? st.quarries : st.mills).get(i);
+    const held = m?.held ?? 0;
+    if (!m || held <= 0) {
+      st.emit('toast', this.millText(x, y));
+      return;
+    }
+    const took = st.pack.add(def.item, held);
+    m.held = held - took;
+    if (took > 0) {
+      this.sfx.pickup();
+      st.emit('gained', x * TILE + 8, y * TILE, [[def.item, took]]);
+    } else st.emit('toast', 'Your pack is full.');
+  }
+
+  /** One handcart per mill or quarry, by its tile index, while it's out on a trip. */
+  private carts = new Map<
+    number,
+    { path: Array<[number, number]>; k: number; load: number; item: ItemId; back: boolean; img: Phaser.GameObjects.Image; cargo: Phaser.GameObjects.Image }
+  >();
+  /** When a producer whose cart found no way home may look again. */
+  private cartRetry = new Map<number, number>();
+
+  /** Sends a cart home with a full load (or whatever's there once the hopper is full). */
+  private dispatchCart(i: number, m: MillState, def: ProducerDef, time: number) {
+    const held = m.held ?? 0;
+    if (this.carts.has(i) || held < Math.min(CART.load, def.hopper) || time < (this.cartRetry.get(i) ?? 0)) return;
+    const w = this.world;
+    const x = i % w.width;
+    const y = (i - x) / w.width;
+    const tiles = pathToStorage(w, x, y);
+    if (!tiles) {
+      this.cartRetry.set(i, time + 3000);
+      return;
+    }
+    const path = tiles.map((t): [number, number] => [(t % w.width) * TILE + 8, Math.floor(t / w.width) * TILE + 11]);
+    const load = Math.min(held, CART.load);
+    m.held = held - load;
+    const [sx, sy] = path[0];
+    const img = this.add.image(sx, sy, 'atlas', 'cart').setOrigin(0.5, 1);
+    const cargo = this.add.image(sx, sy - 7, 'atlas', `item_${def.item}`).setScale(0.5);
+    this.carts.set(i, { path, k: 0, load, item: def.item, back: false, img, cargo });
+  }
+
+  /** Carts roll along their path; at storage they unload, then head back. */
+  private updateCarts(delta: number) {
+    const st = this.game_;
+    const view = this.cameras.main.worldView;
+    for (const [i, c] of this.carts) {
+      let step = (CART.speed * Math.min(delta, 100)) / 1000;
+      while (step > 0) {
+        const [tx, ty] = c.path[c.k];
+        const dx = tx - c.img.x;
+        const dy = ty - c.img.y;
+        const d = Math.hypot(dx, dy);
+        if (d > step) {
+          c.img.x += (dx / d) * step;
+          c.img.y += (dy / d) * step;
+          if (Math.abs(dx) > 0.5) c.img.setFlipX(dx < 0);
+          step = 0;
+        } else {
+          c.img.setPosition(tx, ty);
+          step -= d;
+          if (c.k < c.path.length - 1) {
+            c.k++;
+            continue;
+          }
+          if (!c.back) {
+            st.stash.add(c.item, c.load);
+            if (view.contains(tx, ty)) st.emit('gained', tx, ty - 10, [[c.item, c.load]]);
+            c.back = true;
+            c.path.reverse();
+            c.k = 0;
+            c.cargo.setVisible(false);
+          } else {
+            c.img.destroy();
+            c.cargo.destroy();
+            this.carts.delete(i);
+          }
+          break;
+        }
+      }
+      c.img.setDepth(c.img.y);
+      c.cargo.setPosition(c.img.x, c.img.y - 7).setDepth(c.img.y + 0.1);
+    }
   }
 
   /** Labels for the mills and quarries on screen, for the HUD to draw above them. */
@@ -1328,20 +1436,28 @@ export class WorldScene extends Phaser.Scene {
       for (const [i, m] of map) {
         const x = i % w.width;
         const y = (i - x) / w.width;
-        const status = millStatus(w, x, y, st.stash.count(def.item), def);
+        const stored = st.stash.count(def.item) + this.inCarts(def.item);
+        const status = millStatus(w, x, y, stored, def, m.held ?? 0);
         this.production[def.item] = (this.production[def.item] ?? 0) + perMinute(status);
-        if (view.contains(x * TILE + 8, y * TILE)) this.producerLabels.push({ x: x * TILE + 8, y: (y + 1) * TILE - 30, text: shortStatus(status, def), ok: status.ok });
-        const made = tickMill(m, status, delta, st.stash.count(def.item), def);
-        if (made > 0 && status.ok) {
-          st.stash.add(def.item, made);
-          const cx = (status.chest % w.width) * TILE + 8;
-          const cy = Math.floor(status.chest / w.width) * TILE;
-          if (view.contains(cx, cy)) st.emit('gained', cx, cy, [[def.item, made]]);
+        if (view.contains(x * TILE + 8, y * TILE)) {
+          let text = shortStatus(status, def);
+          if (!status.ok && status.reason === 'hopper-full' && this.carts.has(i)) text = 'Hopper full: waiting for the cart';
+          if (status.ok) text += ` · ${m.held ?? 0}/${def.hopper}`;
+          this.producerLabels.push({ x: x * TILE + 8, y: (y + 1) * TILE - 30, text, ok: status.ok || this.carts.has(i) });
         }
+        tickMill(m, status, delta, stored, def);
+        this.dispatchCart(i, m, def, time);
         const img = this.buildObjects.get(i)?.find((o) => o.frame.name.startsWith(base));
         if (img) img.setFrame(status.ok ? [base, `${base}_1`, `${base}_2`, `${base}_3`][Math.floor(time / speed) % 4] : base);
       }
     }
+  }
+
+  /** Items riding in carts right now, so mills don't overshoot the storage cap. */
+  private inCarts(item: ItemId) {
+    let n = 0;
+    for (const c of this.carts.values()) if (c.item === item && !c.back) n += c.load;
+    return n;
   }
 
   /** A workbench within 3 tiles lets you craft its recipes from the menu. */
@@ -1533,6 +1649,7 @@ export class WorldScene extends Phaser.Scene {
     this.creatures.update(time);
     this.updateShots(time, delta);
     this.updateMills(time, delta);
+    this.updateCarts(delta);
     this.updateGhost();
     this.updateDoors();
 
