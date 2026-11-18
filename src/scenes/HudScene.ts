@@ -9,6 +9,7 @@ import { darknessAt, tintAt } from '../world/shade';
 import { BENCH_RECIPES, HAND_RECIPES, ITEMS, type ItemId, type Recipe } from '../game/items';
 import { BUILDABLES, payCost } from '../game/build';
 import { LEVELING, STAT_INFO, STAT_ORDER, xpToNext } from '../game/stats';
+import { CLASSES, CLASS_ORDER, type ClassId } from '../game/classes';
 import { GameState } from '../game/state';
 import { CONTROLS } from '../game/controls';
 import type { WorldScene } from './WorldScene';
@@ -26,7 +27,7 @@ const ZONE_BLURBS: Record<number, string> = {
 const QUICK_CONTROLS: Array<[key: string, does: string]> = [
   ['WASD', 'Walk  (Shift runs)'],
   ['Left click', 'Chop, mine, pick, use'],
-  ['Right click', 'Swing your weapon'],
+  ['Right click', 'Attack toward the mouse'],
   ['B or C', 'Build & craft menu'],
   ['F', 'Eat'],
   ['H', 'All controls'],
@@ -63,6 +64,8 @@ export class HudScene extends Phaser.Scene {
   private statsOpen = false;
   private statsKey = '';
   private statsBox!: Phaser.GameObjects.Container;
+  /** The "choose your path" picker, shown until you have a class. */
+  private classBox: Phaser.GameObjects.Container | null = null;
   /** The controls panel (H). */
   private controlsBox!: Phaser.GameObjects.Container;
   private hurtFlash!: Phaser.GameObjects.Rectangle;
@@ -116,7 +119,7 @@ export class HudScene extends Phaser.Scene {
     const kb = this.input.keyboard!;
     kb.on('keydown-M', (ev: KeyboardEvent) => !ev.repeat && this.mapBox.setVisible(!this.mapBox.visible));
     const toggleMenu = (ev: KeyboardEvent) => {
-      if (!ev.repeat) this.gs.setMenu(!this.gs.menuOpen);
+      if (!ev.repeat && !this.classBox) this.gs.setMenu(!this.gs.menuOpen);
     };
     kb.on('keydown-B', toggleMenu);
     kb.on('keydown-C', toggleMenu);
@@ -127,6 +130,10 @@ export class HudScene extends Phaser.Scene {
     kb.on('keydown', (ev: KeyboardEvent) => {
       const n = ev.key === '0' ? 10 : ev.key === '-' ? 11 : Number(ev.key);
       if (!(n >= 1 && n <= 11)) return;
+      if (this.classBox) {
+        if (n <= CLASS_ORDER.length) this.chooseClass(CLASS_ORDER[n - 1]);
+        return;
+      }
       if (this.statsOpen) {
         if (n <= STAT_ORDER.length && this.gs.progress.spend(STAT_ORDER[n - 1])) {
           this.gs.sfx.craft();
@@ -139,7 +146,7 @@ export class HudScene extends Phaser.Scene {
     });
 
     kb.on('keydown-L', (ev: KeyboardEvent) => {
-      if (ev.repeat) return;
+      if (ev.repeat || this.classBox) return;
       this.statsOpen = !this.statsOpen;
       this.statsKey = '';
     });
@@ -564,6 +571,11 @@ export class HudScene extends Phaser.Scene {
 
   private layout() {
     const { width, height } = this.scale;
+    if (this.classBox) {
+      // Rebuild the picker at the new size.
+      this.classBox.destroy();
+      this.classBox = null;
+    }
     this.vignette.setDisplaySize(width, height);
     this.buildTag?.setPosition(width - 8, height - 6);
     this.hungerFlash.setSize(width, height);
@@ -615,6 +627,65 @@ export class HudScene extends Phaser.Scene {
     g.fillStyle(hex('#6fb3e0')).fillRect(91, 118, Math.round(148 * frac), 5);
     const label = `Lv ${p.level}${p.points ? `  +${p.points}` : ''}`;
     if (this.levelText.text !== label) this.levelText.setText(label).setColor(p.points ? '#a2412f' : UI.ink);
+  }
+
+  /** "Choose your path": three class cards. Click one or press 1-3. Shown once per run. */
+  private openClassPicker() {
+    const { width, height } = this.scale;
+    this.worldScene.busy = true;
+    this.gs.setMenu(false);
+    this.statsOpen = false;
+    const box = this.add.container(0, 0).setDepth(20);
+    this.classBox = box;
+    box.add(this.add.rectangle(0, 0, width, height, 0x0c0a14, 0.55).setOrigin(0).setInteractive());
+    const cardW = Math.min(230, Math.floor((width - 80) / 3));
+    const cardH = 290;
+    const gap = 18;
+    const total = cardW * 3 + gap * 2;
+    const top = Math.max(70, Math.round(height / 2 - cardH / 2 + 10));
+    box.add(this.text(width / 2, top - 58, 'Choose your path', 30, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 5));
+    box.add(this.text(width / 2, top - 24, 'Click a class or press 1-3. It stays with you for this run.', 14, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 4));
+    CLASS_ORDER.forEach((id, k) => {
+      const c = CLASSES[id];
+      const x = Math.round(width / 2 - total / 2 + k * (cardW + gap));
+      const g = this.add.graphics();
+      this.drawPanel(g, x, top, cardW, cardH);
+      box.add(g);
+      const hover = this.add.graphics().setVisible(false);
+      hover.lineStyle(3, hex('#ffd27a')).strokeRect(x - 2, top - 2, cardW + 4, cardH + 4);
+      box.add(hover);
+      box.add(this.text(x + 18, top + 16, String(k + 1), 16, UI.wood));
+      box.add(this.add.image(x + cardW / 2, top + 58, 'atlas', `class_${id}`).setScale(4));
+      box.add(this.text(x + cardW / 2, top + 98, c.name, 22, UI.ink).setOrigin(0.5, 0));
+      box.add(this.text(x + cardW / 2, top + 126, c.blurb, 13, UI.wood).setOrigin(0.5, 0).setAlign('center').setWordWrapWidth(cardW - 36));
+      let py = top + 172;
+      for (const perk of c.perks) {
+        box.add(this.text(x + 20, py, '•', 14, '#a2412f'));
+        const t = this.text(x + 34, py, perk, 13, UI.ink).setWordWrapWidth(cardW - 52);
+        box.add(t);
+        py += t.height + 8;
+      }
+      const zone = this.add.zone(x, top, cardW, cardH).setOrigin(0).setInteractive({ useHandCursor: true });
+      zone.on('pointerover', () => hover.setVisible(true));
+      zone.on('pointerout', () => hover.setVisible(false));
+      zone.on('pointerdown', (p: Phaser.Input.Pointer) => p.leftButtonDown() && this.chooseClass(id));
+      box.add(zone);
+    });
+  }
+
+  private chooseClass(id: ClassId) {
+    if (!this.classBox) return;
+    const gs = this.gs;
+    gs.progress.cls = id;
+    const c = CLASSES[id];
+    gs.vitals.health = Math.min(gs.mods.maxHealth, gs.vitals.health + Math.max(0, c.maxHealth));
+    this.classBox.destroy();
+    this.classBox = null;
+    this.worldScene.busy = false;
+    gs.sfx.levelUp();
+    const how = id === 'fighter' ? 'Right click swings your axe.' : id === 'archer' ? 'Right click shoots an arrow toward the mouse.' : 'Right click hurls a firebolt toward the mouse.';
+    this.showBanner(`You are a ${c.name}`, how);
+    this.statsKey = '';
   }
 
   /** Character sheet (L): level, XP, and the four stats with [1-4] to spend points. */
@@ -673,7 +744,8 @@ export class HudScene extends Phaser.Scene {
     this.statsBox.add(g);
     this.statsBox.add(this.text(-w / 2 + 20, 14, `Level ${p.level}`, 20, UI.ink));
     const next = p.level >= LEVELING.maxLevel ? 'Max level' : `${p.xp} / ${xpToNext(p.level)} XP`;
-    this.statsBox.add(this.text(-w / 2 + 120, 20, next, 13, UI.wood));
+    const cls = p.cls ? CLASSES[p.cls].name : 'No class';
+    this.statsBox.add(this.text(-w / 2 + 120, 20, `${cls}  ·  ${next}`, 13, UI.wood));
     this.statsBox.add(
       this.text(w / 2 - 20, 18, p.points ? `${p.points} point${p.points > 1 ? 's' : ''} to spend` : 'L to close', 13, p.points ? '#a2412f' : UI.wood).setOrigin(1, 0),
     );
@@ -697,6 +769,7 @@ export class HudScene extends Phaser.Scene {
   update(_time: number, _delta: number) {
     const st = this.worldScene.state;
     const w = this.worldScene.world;
+    if (!this.gs.progress.cls && !this.classBox && this.worldScene.player) this.openClassPicker();
 
     const clock = this.gs.clock;
     const key = `Day ${dayNumber(clock)}  ·  ${hourLabel(clock)}`;

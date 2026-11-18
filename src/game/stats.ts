@@ -1,6 +1,8 @@
 // Character progression: XP, levels, and the four stats you spend points on.
 // Every number that affects balance is in LEVELING so it can be tuned in one place.
 
+import type { ClassId } from './classes';
+
 export type StatId = 'strength' | 'endurance' | 'agility' | 'gathering';
 
 export const STAT_INFO: Record<StatId, { name: string; perPoint: string }> = {
@@ -37,6 +39,8 @@ export class Progress {
   xp = 0; // toward the next level
   points = 0;
   stats: Record<StatId, number> = { strength: 0, endurance: 0, agility: 0, gathering: 0 };
+  /** Fighter, archer or mage; null until you pick one. */
+  cls: ClassId | null = null;
 
   /** Adds XP and returns how many levels were gained. */
   gain(amount: number): number {
@@ -76,6 +80,8 @@ export interface StatMods {
   sprintCostMul: number;
   bonusYieldChance: number;
   toolStaminaMul: number;
+  /** Damage you take is multiplied by this (classes change it). */
+  damageTakenMul: number;
 }
 
 export function modsFor(s: Record<StatId, number>): StatMods {
@@ -89,6 +95,7 @@ export function modsFor(s: Record<StatId, number>): StatMods {
     sprintCostMul: 1 - s.agility * 0.05,
     bonusYieldChance: s.gathering * 0.1,
     toolStaminaMul: 1 - s.gathering * 0.07,
+    damageTakenMul: 1,
   };
 }
 

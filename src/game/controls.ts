@@ -3,7 +3,7 @@ export const CONTROLS: Array<[key: string, does: string]> = [
   ['WASD / arrows', 'Walk'],
   ['Shift', 'Run (uses energy)'],
   ['Left click', 'Use what you click next to you; hold to keep chopping or mining'],
-  ['Right click', 'Swing your weapon toward the mouse; hold to keep swinging'],
+  ['Right click', 'Attack toward the mouse (fighters swing, archers shoot, mages cast); hold to keep going'],
   ['Space', "Swing at what's in front of you"],
   ['F', 'Eat (mushrooms first, then berries)'],
   ['B or C', 'Build & craft menu: click a recipe to craft, or a building to place it'],

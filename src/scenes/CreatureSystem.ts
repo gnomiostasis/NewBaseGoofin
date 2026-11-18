@@ -176,6 +176,17 @@ export class CreatureSystem {
     return hits;
   }
 
+  /** A burst at (x, y): hurts every creature within `radius`, shoving them outward. Returns how many it hit. */
+  blast(x: number, y: number, radius: number, damage: number, time: number): number {
+    let hits = 0;
+    for (const c of [...this.list]) {
+      if (Math.hypot(c.sprite.body.center.x - x, c.sprite.body.center.y - y) > radius + 6) continue;
+      hits++;
+      this.damage(c, damage, x, y, time, 140);
+    }
+    return hits;
+  }
+
   /** Hurts a creature, knocking it back from (fromX, fromY). `knock` 0 stops it without a shove. */
   damage(c: Creature, damage: number, fromX: number, fromY: number, time: number, knock = 170) {
     if (!this.list.includes(c)) return;

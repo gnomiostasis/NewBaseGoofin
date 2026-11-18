@@ -731,6 +731,126 @@ function lostPack(g: Ctx) {
 }
 
 /** 16 x 16 swing arc, drawn for a swing to the right; rotated for other directions. */
+// --- classes ------------------------------------------------------------
+
+function arrowShot(g: Ctx) {
+  // 10 x 3, pointing right: fletching, shaft, stone tip.
+  sprite(g, 0, 0, ['ff......t.', '.fsssssstt', 'ff......t.'], { f: '#e8dcc0', s: WOOD[2], t: STONE[2] });
+}
+
+function firebolt(g: Ctx) {
+  // 9 x 7, pointing right: a hot core trailing flame.
+  sprite(
+    g,
+    0,
+    0,
+    ['...aa....', '.aabbaa..', 'aabbccbb.', '.abbcccbb', 'aabbccbb.', '.aabbaa..', '...aa....'],
+    { a: FIRE[0], b: FIRE[1], c: FIRE[2] },
+  );
+}
+
+function burstRing(g: Ctx) {
+  // 24 x 24 ring of embers; scaled up as the firebolt bursts.
+  for (let a = 0; a < 360; a += 15) {
+    const r = (a * Math.PI) / 180;
+    const x = Math.round(12 + Math.cos(r) * 10);
+    const y = Math.round(12 + Math.sin(r) * 10);
+    px(g, x, y, FIRE[a % 30 === 0 ? 2 : 1]);
+    px(g, Math.round(12 + Math.cos(r) * 8), Math.round(12 + Math.sin(r) * 8), 'rgba(242,140,40,0.5)');
+  }
+}
+
+/** 16 x 16 class badges for the class picker. */
+function classFighter(g: Ctx) {
+  // A round wooden shield behind a crossed axe.
+  sprite(
+    g,
+    0,
+    0,
+    [
+      '................',
+      '.....oooooo.....',
+      '...oowwwwwwoo...',
+      '..owwwwddwwwwo..',
+      '..owwwwddwwwwo..',
+      '.owwwwwddwwwwwo.',
+      '.odddddmmdddddo.',
+      '.odddddmmdddddo.',
+      '.owwwwwddwwwwwo.',
+      '..owwwwddwwwwo..',
+      '..owwwwddwwwwo..',
+      '...oowwddwwoo...',
+      '.....oooooo.....',
+      '................',
+      '................',
+      '................',
+    ],
+    { o: OUTLINE, w: WOOD[0], d: WOOD[1], m: STONE[2] },
+  );
+  sprite(g, 6, 3, ['..sss', '.sSSs', 'sSSso', '.hso.', '.h...', 'h....', 'h....', 'h....', 'h....', 'h....', 'h....', 'h....'], {
+    s: STONE[3],
+    S: STONE[2],
+    o: OUTLINE,
+    h: WOOD[2],
+  });
+}
+
+function classArcher(g: Ctx) {
+  // A drawn bow and an arrow on the string.
+  sprite(
+    g,
+    0,
+    0,
+    [
+      '..........bb....',
+      '........bb..s...',
+      '.......b....s...',
+      '......b.....s...',
+      '.....b......s...',
+      '....b...t...s...',
+      '...b...ttt..s...',
+      '..b...f.a...s...',
+      '..b...f.a...s...',
+      '..b.....a...s...',
+      '...b....a...s...',
+      '....b...a...s...',
+      '.....b..a...s...',
+      '......b.a..s....',
+      '.......bff.s....',
+      '........bbs.....',
+    ],
+    { b: WOOD[1], s: '#e8dcc0', a: WOOD[2], t: STONE[2], f: '#e8dcc0' },
+  );
+}
+
+function classMage(g: Ctx) {
+  // A crooked staff with a flame on top.
+  sprite(
+    g,
+    0,
+    0,
+    [
+      '.......a........',
+      '......aba.......',
+      '.....abcba......',
+      '.....abccba.....',
+      '......bccb......',
+      '.......bb.......',
+      '.......ww.......',
+      '......w.ww......',
+      '.......ww.......',
+      '.......w........',
+      '.......w........',
+      '........w.......',
+      '........w.......',
+      '.......w........',
+      '.......w........',
+      '.......w........',
+    ],
+    { a: FIRE[0], b: FIRE[1], c: FIRE[2], w: WOOD[1] },
+  );
+}
+
 function slash(g: Ctx) {
   for (let a = -60; a <= 60; a += 6) {
     const r = (a * Math.PI) / 180;
@@ -1086,6 +1206,12 @@ export function buildTextures(scene: Phaser.Scene) {
   for (let f = 0; f < 2; f++) atlas.add(`duskprowler_${f}`, 20, 16, (g) => duskprowler(g, f));
   atlas.add('lost_pack', 16, 16, lostPack);
   atlas.add('slash', 16, 16, slash);
+  atlas.add('arrow', 10, 3, arrowShot);
+  atlas.add('firebolt', 9, 7, firebolt);
+  atlas.add('burst', 24, 24, burstRing);
+  atlas.add('class_fighter', 16, 16, classFighter);
+  atlas.add('class_archer', 16, 16, classArcher);
+  atlas.add('class_mage', 16, 16, classMage);
   for (let m = 0; m < 16; m++) atlas.add(`wall_${m}`, 16, 26, (g) => wallPiece(g, m));
   atlas.add('door', 16, 26, (g) => door(g, false));
   atlas.add('door_open', 16, 26, (g) => door(g, true));

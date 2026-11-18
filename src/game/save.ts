@@ -6,6 +6,7 @@ import type { Inventory } from './inventory';
 import type { ItemId } from './items';
 import type { MillState } from './mill';
 import type { Progress, StatId } from './stats';
+import { isClassId, type ClassId } from './classes';
 import type { Vitals } from './survival';
 
 export const SAVE_KEY = 'newbasegoofin.save';
@@ -27,7 +28,7 @@ export interface SaveData {
   pack: Array<[ItemId, number]>;
   stash: Array<[ItemId, number]>;
   vitals: Vitals;
-  progress: { level: number; xp: number; points: number; stats: Record<StatId, number> };
+  progress: { level: number; xp: number; points: number; stats: Record<StatId, number>; cls?: ClassId | null };
   respawn: [number, number] | null;
   lostPacks: Array<{ tx: number; ty: number; items: Array<[ItemId, number]> }>;
   mills: Array<[number, MillState]>;
@@ -77,7 +78,7 @@ export function captureState(s: Saveable): Pick<SaveData, 'pack' | 'stash' | 'vi
     pack: s.pack.entries(),
     stash: s.stash.entries(),
     vitals: { ...s.vitals },
-    progress: { level: p.level, xp: p.xp, points: p.points, stats: { ...p.stats } },
+    progress: { level: p.level, xp: p.xp, points: p.points, stats: { ...p.stats }, cls: p.cls },
     respawn: s.respawn ? [s.respawn[0], s.respawn[1]] : null,
     lostPacks: s.lostPacks.map((l) => ({ tx: l.tx, ty: l.ty, items: l.items.map(([id, n]) => [id, n] as [ItemId, number]) })),
     mills: [...s.mills].map(([i, m]) => [i, { ...m }]),
@@ -97,6 +98,7 @@ export function restoreState(s: Saveable, d: SaveData) {
   s.vitals = { ...d.vitals };
   Object.assign(s.progress, { level: d.progress.level, xp: d.progress.xp, points: d.progress.points });
   s.progress.stats = { ...s.progress.stats, ...d.progress.stats };
+  s.progress.cls = isClassId(d.progress.cls) ? d.progress.cls : null;
   s.respawn = d.respawn;
   s.lostPacks = d.lostPacks.map((l) => ({ ...l, items: [...l.items] }));
   s.mills.clear();
