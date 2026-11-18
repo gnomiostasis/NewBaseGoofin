@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { uiText } from '../ui/font';
-import { dayNumber, hourLabel, nightness } from '../game/daynight';
+import { countdownLabel, dayNumber, hourLabel, nightCountdown, nightness } from '../game/daynight';
 import { SURVIVAL, TILE, ZONES } from '../config';
 import { UI } from '../art/palette';
 import { BUILD_LABEL } from '../build';
@@ -49,6 +49,8 @@ export class HudScene extends Phaser.Scene {
   private mapBox!: Phaser.GameObjects.Container;
   private clockText!: Phaser.GameObjects.Text;
   private clockKey = '';
+  private timerText!: Phaser.GameObjects.Text;
+  private timerKey = '';
   private mapDot!: Phaser.GameObjects.Rectangle;
   private mapScale = 0.75;
   private packBox!: Phaser.GameObjects.Container;
@@ -107,6 +109,7 @@ export class HudScene extends Phaser.Scene {
     this.hurtFlash = this.add.rectangle(0, 0, 10, 10, 0xc8302a, 1).setOrigin(0).setAlpha(0);
     this.buildMsg = this.text(0, 0, '', 15, UI.cream).setOrigin(0.5, 0).setStroke(UI.ink, 4);
     this.clockText = this.text(0, 0, '', 15, UI.cream).setOrigin(1, 0).setStroke(UI.ink, 4);
+    this.timerText = this.text(0, 0, '', 13, UI.cream).setOrigin(1, 0).setStroke(UI.ink, 4);
     this.hint = this.add.container(0, 0);
     this.drawQuickControls();
 
@@ -581,6 +584,7 @@ export class HudScene extends Phaser.Scene {
     // Hide the map on small screens by default; M still shows it.
     if (width < 700) this.mapBox.setVisible(false);
     this.clockText.setPosition(width - 22, width < 700 ? 16 : 22 + size + 14);
+    this.timerText.setPosition(width - 22, this.clockText.y + 24);
   }
 
   private drawBars() {
@@ -701,6 +705,14 @@ export class HudScene extends Phaser.Scene {
       this.clockText.setText(key);
     }
     this.clockText.setColor(nightness(clock) > 0.5 ? '#b9c6ff' : UI.cream);
+    const { night, msLeft } = nightCountdown(clock);
+    const timer = `${night ? 'Sunrise in' : 'Night in'} ${countdownLabel(msLeft)}`;
+    if (timer !== this.timerKey) {
+      this.timerKey = timer;
+      this.timerText.setText(timer);
+      // Night is close: warn in amber for the last 30 seconds of daylight.
+      this.timerText.setColor(night ? '#b9c6ff' : msLeft < 30_000 ? '#ffb347' : UI.cream);
+    }
 
     if (st.zone !== this.lastZone) {
       const z = ZONES[st.zone];

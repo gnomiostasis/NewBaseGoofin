@@ -70,3 +70,21 @@ export function partOfDay(clockMs: number): string {
   if (f < DAY.dawnStart) return 'Night';
   return 'Dawn';
 }
+
+/** Night creatures come out halfway through dusk and leave halfway through dawn. */
+const NIGHT_END = (DAY.dawnStart + 1) / 2;
+
+/** Whether it's night now, and how long until that changes (nightfall by day, sunrise by night). */
+export function nightCountdown(clockMs: number): { night: boolean; msLeft: number } {
+  const f = dayFraction(clockMs);
+  const night = f >= DAY.nightFrom && f < NIGHT_END;
+  let target = night ? NIGHT_END : DAY.nightFrom;
+  if (!night && f >= NIGHT_END) target += 1;
+  return { night, msLeft: Math.max(0, (target - f) * DAY.lengthMs) };
+}
+
+/** "4:05" from milliseconds, rounding up so it never shows 0:00 early. */
+export function countdownLabel(ms: number): string {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
