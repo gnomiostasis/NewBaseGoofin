@@ -6,7 +6,7 @@ import { COMBAT, NIGHT } from '../game/creatures';
 import { CLASSES, attackFor, type AttackSpec } from '../game/classes';
 import { dayNumber, isNight } from '../game/daynight';
 import { LEVELING } from '../game/stats';
-import { MILL, QUARRY, describeMill, millStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
+import { MILL, QUARRY, describeMill, millStatus, perMinute, shortStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
 import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
@@ -1310,11 +1310,18 @@ export class WorldScene extends Phaser.Scene {
     return describeMill(millStatus(this.world, x, y, st.stash.count(def.item), def), m?.made ?? 0, def);
   }
 
+  /** Labels for the mills and quarries on screen, for the HUD to draw above them. */
+  producerLabels: Array<{ x: number; y: number; text: string; ok: boolean }> = [];
+  /** What all mills and quarries together make per minute right now. */
+  production: Partial<Record<ItemId, number>> = {};
+
   /** Mills and quarries keep working wherever you are; they animate while they work. */
   private updateMills(time: number, delta: number) {
     const st = this.game_;
     const w = this.world;
     const view = this.cameras.main.worldView;
+    this.producerLabels = [];
+    this.production = {};
     for (const [map, def] of this.producers()) {
       const base = def === QUARRY ? 'quarry' : 'mill';
       const speed = def === QUARRY ? 110 : 70;
@@ -1322,6 +1329,8 @@ export class WorldScene extends Phaser.Scene {
         const x = i % w.width;
         const y = (i - x) / w.width;
         const status = millStatus(w, x, y, st.stash.count(def.item), def);
+        this.production[def.item] = (this.production[def.item] ?? 0) + perMinute(status);
+        if (view.contains(x * TILE + 8, y * TILE)) this.producerLabels.push({ x: x * TILE + 8, y: (y + 1) * TILE - 30, text: shortStatus(status, def), ok: status.ok });
         const made = tickMill(m, status, delta, st.stash.count(def.item), def);
         if (made > 0 && status.ok) {
           st.stash.add(def.item, made);

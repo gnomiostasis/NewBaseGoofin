@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Build } from '../src/game/build';
-import { MILL, QUARRY, millStatus, msPerItem, sourcesNear, tickMill, treesNear, type MillState } from '../src/game/mill';
+import { MILL, QUARRY, millStatus, msPerItem, perMinute, shortStatus, sourcesNear, tickMill, treesNear, type MillState } from '../src/game/mill';
 import { Prop, generateWorld, idx, isBlocked, type World } from '../src/world/generate';
 import { GATHER } from '../src/game/gather';
 
@@ -91,5 +91,18 @@ describe('quarry', () => {
     expect(stone).toBe(Math.floor(120_000 / msPerItem(2, QUARRY)));
     expect(w.prop[idx(w, x + 2, y)]).toBe(Prop.Rock);
     expect(millStatus(w, x, y, QUARRY.cap, QUARRY)).toMatchObject({ ok: false, reason: 'full' });
+  });
+});
+
+describe('production rates', () => {
+  it('reports items a minute, or why it stopped', () => {
+    const ok = { ok: true as const, sources: 6, msPerItem: msPerItem(6, MILL), chest: 0 };
+    expect(perMinute(ok)).toBeCloseTo(7.5);
+    expect(shortStatus(ok, MILL)).toBe('+7.5 wood/min');
+    expect(shortStatus({ ok: true, sources: 1, msPerItem: msPerItem(1, QUARRY), chest: 0 }, QUARRY)).toBe('+1 stone/min');
+    const stopped = { ok: false as const, reason: 'no-chest' as const, sources: 3 };
+    expect(perMinute(stopped)).toBe(0);
+    expect(shortStatus(stopped, QUARRY)).toBe('Stopped: needs a chest');
+    expect(shortStatus({ ok: false, reason: 'no-source', sources: 0 }, MILL)).toBe('Stopped: no trees');
   });
 });

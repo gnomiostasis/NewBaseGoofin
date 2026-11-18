@@ -130,5 +130,21 @@ export function describeMill(s: MillStatus, made: number, def: ProducerDef = MIL
   }
   const secs = Math.round(s.msPerItem / 1000);
   const n = s.sources >= def.maxSources ? `${def.maxSources}+ ${many} (full speed)` : `${s.sources} ${s.sources === 1 ? one : many}`;
-  return `${def.name}: ${n}, 1 ${def.itemName} every ${secs}s · ${made} made`;
+  return `${def.name}: ${n}, ${rateLabel(perMinute(s))} ${def.itemName} a minute (1 every ${secs}s) · ${made} made`;
+}
+
+/** Items a producer makes per minute right now (0 when it's stopped). */
+export function perMinute(s: MillStatus): number {
+  return s.ok ? 60_000 / s.msPerItem : 0;
+}
+
+/** "7.5" or "4": a rate with at most one decimal. */
+export const rateLabel = (n: number) => (Math.round(n * 10) / 10).toString();
+
+/** The short label shown above a producer: "+7.5 wood/min", or why it has stopped. */
+export function shortStatus(s: MillStatus, def: ProducerDef = MILL): string {
+  if (s.ok) return `+${rateLabel(perMinute(s))} ${def.itemName}/min`;
+  if (s.reason === 'no-source') return `Stopped: no ${def.sourceName[1]}`;
+  if (s.reason === 'no-chest') return 'Stopped: needs a chest';
+  return 'Stopped: storage full';
 }

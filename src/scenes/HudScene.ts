@@ -7,6 +7,7 @@ import { BUILD_LABEL } from '../build';
 import { Ground, Prop } from '../world/generate';
 import { darknessAt, tintAt } from '../world/shade';
 import { BENCH_RECIPES, HAND_RECIPES, ITEMS, type ItemId, type Recipe } from '../game/items';
+import { rateLabel } from '../game/mill';
 import { BUILDABLES, payCost } from '../game/build';
 import { LEVELING, STAT_INFO, STAT_ORDER, xpToNext, type StatId } from '../game/stats';
 import { previewStat } from '../game/statPreview';
@@ -86,6 +87,8 @@ export class HudScene extends Phaser.Scene {
   private buildKey = '';
   private stashBox!: Phaser.GameObjects.Container;
   private stashKey = '';
+  /** Rate labels floating above mills and quarries on screen. */
+  private producerTexts: Phaser.GameObjects.Text[] = [];
   private lastZone = -1;
   private edgeShown = false;
   private warnedHungry = false;
@@ -550,10 +553,34 @@ export class HudScene extends Phaser.Scene {
   }
 
   /** While you're at camp, show what's in the stash. */
+  /** Draws "+7.5 wood/min" (or why it stopped) above each mill and quarry on screen. */
+  private drawProducerLabels() {
+    const labels = this.worldScene.producerLabels;
+    const cam = this.worldScene.cameras.main;
+    while (this.producerTexts.length < labels.length) {
+      this.producerTexts.push(this.text(0, 0, '', 12, UI.cream).setOrigin(0.5, 1).setStroke(UI.ink, 3).setDepth(-1));
+    }
+    this.producerTexts.forEach((t, k) => {
+      const l = labels[k];
+      t.setVisible(!!l);
+      if (!l) return;
+      if (t.text !== l.text) t.setText(l.text).setColor(l.ok ? '#d6f5b0' : '#f0b8a0');
+      t.setPosition(Math.round((l.x - cam.worldView.x) * cam.zoom), Math.round((l.y - cam.worldView.y) * cam.zoom));
+    });
+  }
+
+  /** "+12 wood, +6 stone a minute" from every mill and quarry together, or '' if none are working. */
+  private productionLine(): string {
+    const p = this.worldScene.production;
+    const parts = (Object.entries(p) as Array<[string, number]>).filter(([, n]) => n > 0).map(([id, n]) => `+${rateLabel(n)} ${ITEMS[id as ItemId].name.toLowerCase()}`);
+    return parts.length ? `Making ${parts.join(', ')} a minute` : '';
+  }
+
   private redrawStash() {
     const stash = this.gs.stash;
     const show = this.gs.nearStorage && stash.entries().length > 0;
-    const key = show ? stash.entries().map(([id, n]) => `${id}${n}`).join() : '';
+    const making = this.productionLine();
+    const key = show ? stash.entries().map(([id, n]) => `${id}${n}`).join() + making : '';
     this.stashBox.setVisible(show);
     if (key === this.stashKey) return;
     this.stashKey = key;
@@ -561,7 +588,7 @@ export class HudScene extends Phaser.Scene {
     if (!show) return;
     const entries = stash.entries();
     const w = 250;
-    const h = 44 + Math.ceil(entries.length / 3) * 26;
+    const h = 44 + Math.ceil(entries.length / 3) * 26 + (making ? 20 : 0);
     const g = this.add.graphics();
     this.drawPanel(g, 0, 0, w, h);
     this.stashBox.add(g);
@@ -572,6 +599,7 @@ export class HudScene extends Phaser.Scene {
       this.stashBox.add(this.add.image(x, y, 'atlas', `item_${id}`));
       this.stashBox.add(this.text(x + 12, y - 8, String(n), 14, UI.ink));
     });
+    if (making) this.stashBox.add(this.text(14, h - 30, making, 12, '#3f8a3a'));
   }
 
   private layout() {
@@ -908,6 +936,7 @@ export class HudScene extends Phaser.Scene {
     this.redrawCraft();
     this.redrawBuild();
     this.redrawStash();
+    this.drawProducerLabels();
 
     // A reminder, once, when you're hurt and have food ready.
     const v = this.gs.vitals;
