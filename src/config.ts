@@ -38,15 +38,12 @@ export const PLAYER = {
 export const FAR_TINT = 0x4f5d86;
 export const MAX_DARKNESS = 0.78;
 
-/** Survival bars. Hunger is gentle on purpose: about six minutes from full to empty. */
+/** Survival bars: health and energy. Food heals health, with a cooldown between meals. */
 export const SURVIVAL = {
   maxHealth: 100,
-  maxHunger: 100,
   maxStamina: 100,
-  hungerPerSecond: 100 / 360,
-  sprintHungerFactor: 1.6,
-  hungryBelow: 25,
-  starveDamagePerSecond: 1.2,
+  /** How long after eating before food can heal you again. */
+  foodCooldownMs: 15_000,
   sprintStaminaPerSecond: 16,
   staminaRegen: 9,
   campStaminaRegen: 30,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DAY, countdownLabel, dayNumber, hourLabel, isNight, nextMorning, nightCountdown, nightness } from '../src/game/daynight';
+import { DAY, countdownLabel, dayNumber, hourLabel, isNight, nightCountdown, nightness } from '../src/game/daynight';
 
 const at = (f: number, day = 0) => (day + f - DAY.startAt) * DAY.lengthMs;
 
@@ -30,14 +30,6 @@ describe('day and night', () => {
     expect((DAY.lengthMs - night) / 60_000).toBeCloseTo(6, 1);
   });
 
-  it('sleeping skips to the next morning', () => {
-    const t = at(0.85, 2);
-    const m = nextMorning(t);
-    expect(m).toBeGreaterThan(t);
-    expect(nightness(m)).toBe(0);
-    expect(hourLabel(m)).toBe('6 AM');
-    expect(dayNumber(m)).toBe(dayNumber(t) + 1);
-  });
 });
 
 import { NIGHT, nightCap, pickNightSpawn } from '../src/game/creatures';

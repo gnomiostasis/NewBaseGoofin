@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Inventory } from '../src/game/inventory';
-import { HAND_RECIPES } from '../src/game/items';
-import { eat, freshVitals, spendStamina, tickVitals } from '../src/game/survival';
+import { HAND_RECIPES, ITEMS } from '../src/game/items';
+import { modsFor } from '../src/game/stats';
+import { cantEat, eat, freshVitals, spendStamina, tickVitals } from '../src/game/survival';
 import { GATHER } from '../src/game/gather';
 import { Prop, generateWorld, idx } from '../src/world/generate';
 import { SURVIVAL } from '../src/config';
@@ -47,20 +48,37 @@ describe('pack', () => {
 describe('survival', () => {
   const base = { moving: false, sprinting: false, atCamp: false };
 
-  it('drains hunger slowly: a few minutes from full to empty', () => {
+  it('has no hunger: standing around for minutes costs nothing', () => {
     let v = freshVitals();
-    for (let t = 0; t < 120; t++) v = tickVitals(v, { ...base, dt: 1 });
-    expect(v.hunger).toBeGreaterThan(55);
-    expect(v.hunger).toBeLessThan(75);
-    expect(v.health).toBe(SURVIVAL.maxHealth);
+    for (let t = 0; t < 600; t++) v = tickVitals(v, { ...base, dt: 1 });
+    expect(v).toEqual(freshVitals());
   });
 
-  it('hurts once you are starving, and eating fixes it', () => {
-    let v = { ...freshVitals(), hunger: 0 };
-    v = tickVitals(v, { ...base, dt: 10 });
-    expect(v.health).toBeLessThan(SURVIVAL.maxHealth);
-    eat(v, 30);
-    expect(v.hunger).toBe(30);
+  it('food heals health, then has to wait out a cooldown', () => {
+    const v = { ...freshVitals(), health: 40 };
+    expect(cantEat(v, 100, 0, 0)).toBeNull();
+    const readyAt = eat(v, ITEMS.berries.heal!, 100, 0);
+    expect(v.health).toBe(40 + ITEMS.berries.heal!);
+    expect(readyAt).toBe(SURVIVAL.foodCooldownMs);
+    expect(cantEat(v, 100, 5000, readyAt)).toMatch(/again in 10s/);
+    expect(cantEat(v, 100, readyAt, readyAt)).toBeNull();
+    expect(cantEat({ ...v, health: 100 }, 100, readyAt, readyAt)).toMatch(/full health/);
+    // Never past max health.
+    eat(v, 500, 100, 0);
+    expect(v.health).toBe(100);
+  });
+
+  it('endurance makes food heal more', () => {
+    const a = { ...freshVitals(), health: 10 };
+    const b = { ...freshVitals(), health: 10 };
+    eat(a, 20, 200, 0);
+    eat(b, 20, 200, 0, modsFor({ strength: 0, endurance: 3, agility: 0, gathering: 0 }));
+    expect(b.health).toBeGreaterThan(a.health);
+  });
+
+  it('camp slowly heals you', () => {
+    const v = tickVitals({ ...freshVitals(), health: 50 }, { ...base, atCamp: true, dt: 5 });
+    expect(v.health).toBeGreaterThan(50);
   });
 
   it('sprinting burns stamina and resting brings it back, faster at camp', () => {

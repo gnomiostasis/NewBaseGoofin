@@ -45,12 +45,6 @@ export function isNight(clockMs: number): boolean {
   return nightness(clockMs) > 0.5;
 }
 
-/** Clock time to sleep until: the next morning at 6 AM. */
-export function nextMorning(clockMs: number): number {
-  const sinceDawn = dayFraction(clockMs) * DAY.lengthMs;
-  return clockMs - sinceDawn + DAY.lengthMs;
-}
-
 /** "9 AM", "12 PM", "11 PM". */
 export function hourLabel(clockMs: number): string {
   const f = dayFraction(clockMs);

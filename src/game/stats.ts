@@ -7,7 +7,7 @@ export type StatId = 'strength' | 'endurance' | 'agility' | 'gathering';
 
 export const STAT_INFO: Record<StatId, { name: string; perPoint: string }> = {
   strength: { name: 'Strength', perPoint: '+2 damage, +5 carry' },
-  endurance: { name: 'Endurance', perPoint: '+10 max health, slower hunger' },
+  endurance: { name: 'Endurance', perPoint: '+10 max health, food heals 10% more' },
   agility: { name: 'Agility', perPoint: 'Faster walking, energy recovers faster' },
   gathering: { name: 'Gathering', perPoint: '+10% bonus yield, tools cost less energy' },
 };
@@ -74,7 +74,8 @@ export interface StatMods {
   damageBonus: number;
   carryBonus: number;
   maxHealth: number;
-  hungerMul: number;
+  /** Food heals this much more. */
+  foodHealMul: number;
   speedMul: number;
   staminaRegenMul: number;
   sprintCostMul: number;
@@ -89,7 +90,7 @@ export function modsFor(s: Record<StatId, number>): StatMods {
     damageBonus: s.strength * 2,
     carryBonus: s.strength * 5,
     maxHealth: 100 + s.endurance * 10,
-    hungerMul: 1 - s.endurance * 0.05,
+    foodHealMul: 1 + s.endurance * 0.1,
     speedMul: 1 + s.agility * 0.04,
     staminaRegenMul: 1 + s.agility * 0.08,
     sprintCostMul: 1 - s.agility * 0.05,

@@ -1,16 +1,14 @@
 import { SURVIVAL } from '../config';
 import { BASE_MODS, type StatMods } from './stats';
 
-/** The three survival bars, each 0..max. */
+/** The two survival bars, each 0..max. */
 export interface Vitals {
   health: number;
-  hunger: number; // 100 = full, 0 = starving
   stamina: number;
 }
 
 export const freshVitals = (): Vitals => ({
   health: SURVIVAL.maxHealth,
-  hunger: SURVIVAL.maxHunger,
   stamina: SURVIVAL.maxStamina,
 });
 
@@ -19,38 +17,25 @@ export interface TickInput {
   dt: number;
   moving: boolean;
   sprinting: boolean;
-  /** Within the campfire's warmth: stamina comes back faster. */
+  /** Within the campfire's warmth: energy comes back faster and health slowly returns. */
   atCamp: boolean;
 }
 
-/**
- * Advances the bars by `dt` seconds. Hunger always drains (faster when sprinting).
- * Stamina recovers when you're not sprinting, slowly if you're hungry.
- * At zero hunger you start losing health.
- */
+/** Advances the bars by `dt` seconds. Energy recovers when you're not sprinting; camp heals you slowly. */
 export function tickVitals(v: Vitals, t: TickInput, m: StatMods = BASE_MODS): Vitals {
   const s = SURVIVAL;
-  let hunger = v.hunger - t.dt * s.hungerPerSecond * m.hungerMul * (t.sprinting ? s.sprintHungerFactor : 1);
   let stamina = v.stamina;
   let health = v.health;
 
   if (t.sprinting && t.moving) stamina -= t.dt * s.sprintStaminaPerSecond * m.sprintCostMul;
   else {
-    const hungry = hunger < s.hungryBelow;
-    const rate = (t.atCamp ? s.campStaminaRegen : s.staminaRegen) * m.staminaRegenMul * (hungry ? 0.35 : 1) * (t.moving ? 0.5 : 1);
+    const rate = (t.atCamp ? s.campStaminaRegen : s.staminaRegen) * m.staminaRegenMul * (t.moving ? 0.5 : 1);
     stamina += t.dt * rate;
   }
-
-  if (hunger <= 0) {
-    hunger = 0;
-    health -= t.dt * s.starveDamagePerSecond;
-  } else if (hunger > s.hungryBelow && t.atCamp) {
-    health += t.dt * s.campHealPerSecond;
-  }
+  if (t.atCamp) health += t.dt * s.campHealPerSecond;
 
   return {
     health: clamp(health, 0, m.maxHealth),
-    hunger: clamp(hunger, 0, s.maxHunger),
     stamina: clamp(stamina, 0, s.maxStamina),
   };
 }
@@ -62,9 +47,17 @@ export function spendStamina(v: Vitals, cost: number): boolean {
   return true;
 }
 
-export function eat(v: Vitals, food: number, heal = 0, maxHealth = SURVIVAL.maxHealth) {
-  v.hunger = clamp(v.hunger + food, 0, SURVIVAL.maxHunger);
-  v.health = clamp(v.health + heal, 0, maxHealth);
+/** Why you can't eat right now, or null if a meal would heal you. */
+export function cantEat(v: Vitals, maxHealth: number, now: number, readyAt: number): string | null {
+  if (now < readyAt) return `You can eat again in ${Math.ceil((readyAt - now) / 1000)}s.`;
+  if (v.health >= maxHealth - 0.5) return "You're already at full health.";
+  return null;
+}
+
+/** Eats: heals `heal` health (times the endurance bonus). Returns when you can eat again. */
+export function eat(v: Vitals, heal: number, maxHealth: number, now: number, m: StatMods = BASE_MODS): number {
+  v.health = clamp(v.health + heal * m.foodHealMul, 0, maxHealth);
+  return now + SURVIVAL.foodCooldownMs;
 }
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
