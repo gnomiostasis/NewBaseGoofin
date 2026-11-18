@@ -343,7 +343,7 @@ export class HudScene extends Phaser.Scene {
       cell.fillStyle(hex(sel ? '#f2b93b' : '#b08a54')).fillRect(x + 2, 8, slot - 4, h - 16);
       cell.fillStyle(hex('#e7cf9c')).fillRect(x + 4, 10, slot - 8, h - 20);
       this.buildBox.add(cell);
-      const frame = b.kind === 'wall' ? 'wall_0' : b.kind;
+      const frame = b.kind === 'wall' ? 'wall_10' : b.kind;
       this.buildBox.add(this.text(x + 7, 12, k === 10 ? '-' : String((k + 1) % 10), 11, UI.wood));
       const name = this.text(x + slot / 2 + 5, 13, b.name, 12, afford ? UI.ink : '#9c8566').setOrigin(0.5, 0);
       // Long names like "Workbench" shrink a little so they clear the slot number.

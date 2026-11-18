@@ -30,8 +30,8 @@ export interface BuildDef {
 /** In build-bar order: keys 1-9, 0 and - pick them. */
 export const BUILDABLES: BuildDef[] = [
   { kind: 'floor', name: 'Floor', cost: { wood: 1 }, blurb: 'Plank floor to walk on' },
-  { kind: 'wall', name: 'Wall', cost: { wood: 2 }, blurb: 'Keeps things out' },
-  { kind: 'door', name: 'Door', cost: { wood: 2, fiber: 1 }, blurb: 'A wall you can walk through' },
+  { kind: 'wall', name: 'Wall', cost: { wood: 2 }, blurb: 'A sturdy fence that keeps things out' },
+  { kind: 'door', name: 'Door', cost: { wood: 2, fiber: 1 }, blurb: 'A gate in your fence you can walk through' },
   { kind: 'chest', name: 'Chest', cost: { wood: 4, stone: 1 }, blurb: 'Storage, shared with the camp stash' },
   { kind: 'bed', name: 'Bed', cost: { wood: 4, fiber: 4 }, blurb: 'Rest here; you wake here if you collapse' },
   { kind: 'workbench', name: 'Workbench', cost: { wood: 5, stone: 3 }, blurb: 'Crafts copper tools and a bigger pack' },
