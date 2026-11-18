@@ -1,14 +1,17 @@
-// The day and night cycle. A full day takes DAY.lengthMs of play; a run starts in the morning.
-// Clock time is a fraction of the day: 0 is dawn (6 AM), 0.5 is dusk (6 PM).
+// The day and night cycle. A full day takes DAY.lengthMs of play: about 6 minutes of daylight,
+// then about 2 minutes of night. A run starts in the morning. Clock time is a fraction of the
+// day: 0 is 6 AM, `nightFrom` is 8 PM, and the hours of the night pass faster than the day's.
 
 export const DAY = {
   /** One full day and night, in milliseconds of play. */
   lengthMs: 8 * 60_000,
   /** Fraction of the day when dusk starts and when it is fully night. */
-  duskStart: 0.5,
-  nightStart: 0.58,
+  duskStart: 0.71,
+  nightStart: 0.75,
   /** Fraction of the day when night starts to lift and when it's fully morning. */
-  dawnStart: 0.92,
+  dawnStart: 0.96,
+  /** Night creatures are out from here (halfway through dusk) until halfway through dawn: 2 minutes. */
+  nightFrom: 0.73,
   /** A new run starts here: mid-morning. */
   startAt: 0.08,
   /** How dark full night gets (0 none, 1 black). Kept readable. */
@@ -50,7 +53,10 @@ export function nextMorning(clockMs: number): number {
 
 /** "9 AM", "12 PM", "11 PM". */
 export function hourLabel(clockMs: number): string {
-  const h = (Math.floor(dayFraction(clockMs) * 24) + 6) % 24;
+  const f = dayFraction(clockMs);
+  // 6 AM to 8 PM across the day, 8 PM to 6 AM across the (shorter) night.
+  const hours = f < DAY.nightFrom ? 6 + (f / DAY.nightFrom) * 14 : 20 + ((f - DAY.nightFrom) / (1 - DAY.nightFrom)) * 10;
+  const h = Math.floor(hours) % 24;
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12} ${h < 12 ? 'AM' : 'PM'}`;
 }
@@ -58,7 +64,7 @@ export function hourLabel(clockMs: number): string {
 /** "Morning", "Afternoon", "Evening", "Night". */
 export function partOfDay(clockMs: number): string {
   const f = dayFraction(clockMs);
-  if (f < 0.25) return 'Morning';
+  if (f < 0.3) return 'Morning';
   if (f < DAY.duskStart) return 'Afternoon';
   if (f < DAY.nightStart) return 'Evening';
   if (f < DAY.dawnStart) return 'Night';

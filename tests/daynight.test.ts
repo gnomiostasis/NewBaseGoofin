@@ -15,14 +15,23 @@ describe('day and night', () => {
     const mid = nightness(at((DAY.duskStart + DAY.nightStart) / 2));
     expect(mid).toBeGreaterThan(0.2);
     expect(mid).toBeLessThan(0.8);
-    expect(nightness(at(0.75))).toBe(1);
-    expect(isNight(at(0.75))).toBe(true);
+    expect(nightness(at(0.85))).toBe(1);
+    expect(isNight(at(0.85))).toBe(true);
     expect(nightness(at(0.999))).toBeLessThan(0.05);
-    expect(hourLabel(at(0.75))).toBe('12 AM');
+    expect(hourLabel(at(0.85))).toBe('12 AM');
+    expect(hourLabel(at(DAY.duskStart))).toBe('7 PM');
+  });
+
+  it('has about 6 minutes of day and 2 minutes of night', () => {
+    let night = 0;
+    const step = 100;
+    for (let t = 0; t < DAY.lengthMs; t += step) if (isNight(t)) night += step;
+    expect(night / 60_000).toBeCloseTo(2, 1);
+    expect((DAY.lengthMs - night) / 60_000).toBeCloseTo(6, 1);
   });
 
   it('sleeping skips to the next morning', () => {
-    const t = at(0.75, 2);
+    const t = at(0.85, 2);
     const m = nextMorning(t);
     expect(m).toBeGreaterThan(t);
     expect(nightness(m)).toBe(0);
