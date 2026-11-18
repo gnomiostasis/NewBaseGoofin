@@ -1,5 +1,6 @@
-// Character classes. You pick one when a run begins: the fighter swings up close, the archer
-// shoots arrows from range, and the mage hurls firebolts that burst on impact.
+// Character classes. You pick one when a run begins: the fighter swings fast and hard up close,
+// the archer looses quick, light arrows from far away, and the mage hurls slow, heavy firebolts
+// that burst on impact.
 // Every number that affects balance is in CLASSES so it can be tuned in one place.
 
 import { COMBAT, playerDamage } from './creatures';
@@ -32,9 +33,9 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     id: 'fighter',
     name: 'Fighter',
     blurb: 'Wades in with an axe and shrugs off bites.',
-    perks: ['Hard-hitting swings with a wider reach', '+30 max health', 'Takes 25% less damage'],
+    perks: ['Fast, heavy swings, but only up close', '+30 max health', 'Takes 25% less damage'],
     maxHealth: 30,
-    damageBonus: 3,
+    damageBonus: 4,
     speedMul: 1,
     staminaRegenMul: 1,
     damageTakenMul: 0.75,
@@ -44,7 +45,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     id: 'archer',
     name: 'Archer',
     blurb: 'Picks creatures off before they get close.',
-    perks: ['Shoots arrows toward the mouse', 'Walks 12% faster', 'Arrows hit harder as you level'],
+    perks: ['Rapid, light arrows that fly far', 'Walks 12% faster', 'Arrows hit harder as you level'],
     maxHealth: 0,
     damageBonus: 0,
     speedMul: 1.12,
@@ -56,7 +57,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     id: 'mage',
     name: 'Mage',
     blurb: 'Hurls firebolts that burst and hit everything nearby.',
-    perks: ['Firebolts burst on impact', 'Energy comes back 35% faster', 'Carries a brighter light at night'],
+    perks: ['Slow, heavy firebolts that burst', 'Energy comes back 35% faster', 'Carries a brighter light at night'],
     maxHealth: -10,
     damageBonus: 0,
     speedMul: 1,
@@ -81,9 +82,12 @@ export interface AttackSpec {
 }
 
 export const SHOTS = {
-  arrow: { base: 8, perLevel: 1, cooldownMs: 480, stamina: 3, range: 9 * 16, speed: 320 },
-  firebolt: { base: 11, perLevel: 1.5, cooldownMs: 760, stamina: 8, range: 7 * 16, speed: 210, splash: 22 },
-  fighter: { reach: 20, cooldownMs: 380 },
+  // Fast, light and long: many small hits from far away.
+  arrow: { base: 5, perLevel: 0.5, cooldownMs: 260, stamina: 2, range: 13 * 16, speed: 380 },
+  // Slow, heavy and long: one big burst at a time.
+  firebolt: { base: 20, perLevel: 2.5, cooldownMs: 1100, stamina: 10, range: 12 * 16, speed: 240, splash: 24 },
+  // Fast and heavy, but you have to be right next to it.
+  fighter: { reach: 20, cooldownMs: 320 },
 };
 
 /** The attack a character of this class, level and gear makes. `cls` null is the classless default. */
