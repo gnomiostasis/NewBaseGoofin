@@ -4,7 +4,7 @@ import { NightSystem, type Light } from './NightSystem';
 import { CreatureSystem } from './CreatureSystem';
 import { COMBAT, NIGHT } from '../game/creatures';
 import { CLASSES, attackFor, type AttackSpec } from '../game/classes';
-import { dayNumber, isNight, nextMorning } from '../game/daynight';
+import { dayNumber, isNight } from '../game/daynight';
 import { LEVELING } from '../game/stats';
 import { MILL, QUARRY, describeMill, millStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
 import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
@@ -28,7 +28,7 @@ import { hash2 } from '../world/rng';
 import { GATHER, GLOWCAP_RULE, type GatherRule } from '../game/gather';
 import { ITEMS, type ItemId } from '../game/items';
 import { GameState } from '../game/state';
-import { eat, freshVitals, spendStamina, tickVitals } from '../game/survival';
+import { cantEat, eat, freshVitals, spendStamina, tickVitals } from '../game/survival';
 import { Sfx } from '../game/sfx';
 import {
   BUILDABLES,
@@ -617,13 +617,13 @@ export class WorldScene extends Phaser.Scene {
     if (t.kind === 'lostpack') return ['Pick up your lost pack', false];
     if (t.kind === 'build') {
       if (t.what === 'chest') return ['Store materials in chest', false];
-      if (t.what === 'bed') return ['Sleep (you will wake here)', false];
+      if (t.what === 'bed') return [this.game_.respawn?.[0] === t.tx && this.game_.respawn?.[1] === t.ty ? 'Your bed: you wake here if you collapse' : 'Wake here if you collapse', false];
       if (t.what === 'mill' || t.what === 'quarry') return [this.millText(t.tx, t.ty), false];
       return ['Open the build and craft menu (workbench recipes)', false];
     }
     if (t.kind === 'camp') {
       if (t.what === 'crate' || t.what === 'sack') return ['Store materials in camp stash', false];
-      return ['Rest', false];
+      return ['Campfire: you heal and get energy back faster near it', true];
     }
     const name = propName(t.prop, t.rule);
     if (t.rule.tool && !pack.hasTool(t.rule.tool)) return [`${t.rule.verb} ${name} (needs an ${t.rule.tool === 'axe' ? 'axe' : 'pick'})`, true];
@@ -646,13 +646,13 @@ export class WorldScene extends Phaser.Scene {
       else if (t.what === 'mill' || t.what === 'quarry') st.emit('toast', this.millText(t.tx, t.ty));
       else if (t.what === 'bed') {
         st.respawn = [t.tx, t.ty];
-        this.rest(true);
+        st.emit('toast', 'You will wake up here if you collapse.');
+        this.save();
       } else st.setMenu(true);
       return;
     }
     if (t.kind === 'camp') {
       if (t.what === 'crate' || t.what === 'sack') this.storeMaterials();
-      else this.rest();
       this.nextSwing = time + 400;
       return;
     }
@@ -670,7 +670,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     if (!spendStamina(st.vitals, rule.stamina * st.mods.toolStaminaMul)) {
-      st.emit('toast', 'Too tired. Rest a moment, or eat something.');
+      st.emit('toast', 'Too tired. Catch your breath for a moment.');
       this.nextSwing = time + 500;
       return;
     }
@@ -745,59 +745,6 @@ export class WorldScene extends Phaser.Scene {
     this.sfx.pickup();
   }
 
-  private rest(inBed = false) {
-    const st = this.game_;
-    const night = isNight(st.clock);
-    if (night && inBed && this.creatures.hunting(10)) {
-      st.emit('toast', "You can't sleep with something prowling this close. Wall yourself in.");
-      return;
-    }
-    if (night && inBed) {
-      this.sleepThroughNight();
-      return;
-    }
-    if (inBed && st.vitals.stamina >= SURVIVAL.maxStamina - 1) {
-      st.emit('toast', 'You will wake up here if you collapse.');
-      return;
-    }
-    if (st.vitals.stamina >= SURVIVAL.maxStamina - 1) {
-      st.emit('toast', "You're not tired.");
-      return;
-    }
-    this.busy = true;
-    this.player.setVelocity(0, 0);
-    const cam = this.cameras.main;
-    cam.fadeOut(350, 16, 24, 35);
-    cam.once('camerafadeoutcomplete', () => {
-      st.vitals.stamina = SURVIVAL.maxStamina;
-      st.vitals.hunger = Math.max(0, st.vitals.hunger - 8);
-      st.emit('toast', inBed ? 'You sleep in your own bed. Energy restored, and you will wake here.' : 'You rest by the fire. Energy restored.');
-      cam.fadeIn(450, 16, 24, 35);
-      this.busy = false;
-      this.save();
-    });
-  }
-
-  /** Sleeping in a bed at night skips to morning. */
-  private sleepThroughNight() {
-    const st = this.game_;
-    this.busy = true;
-    this.player.setVelocity(0, 0);
-    const cam = this.cameras.main;
-    cam.fadeOut(600, 8, 10, 24);
-    cam.once('camerafadeoutcomplete', () => {
-      st.clock = nextMorning(st.clock);
-      this.wasNight = false;
-      this.creatures.clearNocturnal();
-      st.vitals.stamina = SURVIVAL.maxStamina;
-      st.vitals.hunger = Math.max(0, st.vitals.hunger - 15);
-      st.emit('toast', `You sleep through the night. Morning of day ${dayNumber(st.clock)}.`);
-      cam.fadeIn(900, 8, 10, 24);
-      this.busy = false;
-      this.save();
-    });
-  }
-
   private eatSomething() {
     const st = this.game_;
     const food = (['mushroom', 'berries'] as ItemId[]).find((id) => st.pack.has(id));
@@ -805,13 +752,15 @@ export class WorldScene extends Phaser.Scene {
       st.emit('toast', 'No food in your pack. Berry bushes grow in the meadow.');
       return;
     }
-    if (st.vitals.hunger >= SURVIVAL.maxHunger - 2) {
-      st.emit('toast', "You're full.");
+    const why = cantEat(st.vitals, st.mods.maxHealth, st.clock, st.foodReadyAt);
+    if (why) {
+      st.emit('toast', why);
       return;
     }
     st.pack.remove(food);
-    eat(st.vitals, ITEMS[food].food ?? 0, ITEMS[food].heal ?? 0, st.mods.maxHealth);
-    st.emit('toast', `Ate ${ITEMS[food].name.toLowerCase()}.`);
+    const before = st.vitals.health;
+    st.foodReadyAt = eat(st.vitals, ITEMS[food].heal ?? 0, st.mods.maxHealth, st.clock, st.mods);
+    st.emit('toast', `Ate ${ITEMS[food].name.toLowerCase()}. +${Math.round(st.vitals.health - before)} health`);
     this.sfx.munch();
   }
 
@@ -828,7 +777,7 @@ export class WorldScene extends Phaser.Scene {
       st.pack.clear((id) => ITEMS[id].kind === 'tool');
       this.renderLostPacks();
       this.creatures.clear();
-      st.vitals = { ...freshVitals(), health: 50, hunger: 50, stamina: 50 };
+      st.vitals = { ...freshVitals(), health: 50, stamina: 50 };
       const bed = st.respawn && this.world.build[idx(this.world, ...st.respawn)] === Build.Bed ? st.respawn : null;
       if (bed) this.player.setPosition(bed[0] * TILE + 8, (bed[1] + 1) * TILE + 6);
       else this.player.setPosition(this.world.campX * TILE + 8, (this.world.campY + 1) * TILE + 10);
@@ -1465,7 +1414,7 @@ export class WorldScene extends Phaser.Scene {
     }
     const moving = vx !== 0 || vy !== 0;
     const sprinting = moving && k.shift.isDown && st.vitals.stamina > 1;
-    const speed = PLAYER.speed * st.mods.speedMul * (sprinting ? SPRINT_MULTIPLIER : 1) * (st.vitals.hunger <= 0 ? 0.8 : 1);
+    const speed = PLAYER.speed * st.mods.speedMul * (sprinting ? SPRINT_MULTIPLIER : 1);
     const len = Math.hypot(vx, vy) || 1;
     if (time >= this.knockUntil) this.player.setVelocity((vx / len) * speed, (vy / len) * speed);
     st.pack.baseCapacity = PACK.capacity + st.mods.carryBonus;

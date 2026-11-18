@@ -29,7 +29,7 @@ const QUICK_CONTROLS: Array<[key: string, does: string]> = [
   ['Left click', 'Chop, mine, pick, use'],
   ['Right click', 'Attack toward the mouse'],
   ['B or C', 'Build & craft menu'],
-  ['F', 'Eat'],
+  ['F', 'Eat to heal'],
   ['H', 'All controls'],
 ];
 
@@ -46,7 +46,8 @@ export class HudScene extends Phaser.Scene {
   private bannerSub!: Phaser.GameObjects.Text;
   private hint!: Phaser.GameObjects.Container;
   private vignette!: Phaser.GameObjects.Image;
-  private hungerFlash!: Phaser.GameObjects.Rectangle;
+  /** Over the Food bar: "Ready" or the seconds until food can heal you again. */
+  private foodText!: Phaser.GameObjects.Text;
   private mapBox!: Phaser.GameObjects.Container;
   private clockText!: Phaser.GameObjects.Text;
   private clockKey = '';
@@ -88,7 +89,6 @@ export class HudScene extends Phaser.Scene {
     this.worldScene = this.scene.get('world') as WorldScene;
     this.gs = GameState.get(this);
     this.buildVignette();
-    this.hungerFlash = this.add.rectangle(0, 0, 10, 10, 0x8a1f1f, 0).setOrigin(0);
 
     const panel = this.add.graphics();
     this.drawPanel(panel, 12, 12, 250, 132);
@@ -98,6 +98,7 @@ export class HudScene extends Phaser.Scene {
     this.bars = this.add.graphics();
     for (const [k, label] of ['Health', 'Food', 'Energy'].entries()) this.text(26, 66 + k * 16, label, 12, UI.ink);
     this.levelText = this.text(26, 114, 'Lv 1', 12, UI.ink);
+    this.foodText = this.text(165, 84, '', 11, UI.cream).setOrigin(0.5, 0.5).setStroke(UI.ink, 3);
 
     this.buildBanner();
     this.buildMinimap();
@@ -174,7 +175,7 @@ export class HudScene extends Phaser.Scene {
     });
     this.gs.on('toast', (t) => this.toast(t));
     this.gs.on('phase', (phase, day) => {
-      if (phase === 'dusk') this.showBanner('Night is falling', 'Creatures will hunt you after dark. Wall yourself in, or sleep in a bed.');
+      if (phase === 'dusk') this.showBanner('Night is falling', 'Creatures will hunt you after dark. Wall yourself in and light some torches.');
       else this.showBanner(`Day ${day}`, 'The night creatures slink back into the woods.');
     });
     this.gs.on('gained', (wx, wy, items) => this.floatGain(wx, wy, items));
@@ -578,7 +579,6 @@ export class HudScene extends Phaser.Scene {
     }
     this.vignette.setDisplaySize(width, height);
     this.buildTag?.setPosition(width - 8, height - 6);
-    this.hungerFlash.setSize(width, height);
     this.banner.setPosition(width / 2, Math.round(height * 0.2));
     // Bottom-left, clear of the pack bar; hidden when the window is too narrow for both.
     this.hint.setPosition(12, height - 12).setVisible(width >= 760);
@@ -599,13 +599,21 @@ export class HudScene extends Phaser.Scene {
     this.timerText.setPosition(width - 22, this.clockText.y + 24);
   }
 
+  private hasFood() {
+    return this.gs.pack.has('berries') || this.gs.pack.has('mushroom');
+  }
+
   private drawBars() {
     const v = this.gs.vitals;
+    const foodWait = Math.max(0, this.gs.foodReadyAt - this.gs.clock);
+    const foodLabel = foodWait > 0 ? `${Math.ceil(foodWait / 1000)}s` : this.hasFood() ? 'Ready (F)' : 'Ready';
+    if (this.foodText.text !== foodLabel) this.foodText.setText(foodLabel);
     const g = this.bars;
     g.clear();
     const rows: Array<[number, number, string, string]> = [
       [v.health, this.gs.mods.maxHealth, '#d8434e', '#f07c84'],
-      [v.hunger, SURVIVAL.maxHunger, '#e0892c', '#f6b45e'],
+      // Food: fills back up as the meal cooldown runs out.
+      [SURVIVAL.foodCooldownMs - foodWait, SURVIVAL.foodCooldownMs, '#e0892c', '#f6b45e'],
       [v.stamina, SURVIVAL.maxStamina, '#7fc25a', '#b6e38c'],
     ];
     rows.forEach(([val, max, c, light], k) => {
@@ -813,14 +821,14 @@ export class HudScene extends Phaser.Scene {
     this.redrawBuild();
     this.redrawStash();
 
-    // Hunger warnings: a toast once, then a slow red pulse while starving.
+    // A reminder, once, when you're hurt and have food ready.
     const v = this.gs.vitals;
-    if (v.hunger < SURVIVAL.hungryBelow && !this.warnedHungry) {
+    const hurt = v.health < this.gs.mods.maxHealth * 0.5;
+    if (hurt && !this.warnedHungry && this.hasFood() && this.gs.clock >= this.gs.foodReadyAt) {
       this.warnedHungry = true;
-      this.toast("You're getting hungry. Press F to eat.");
+      this.toast("You're hurt. Press F to eat and heal.");
     }
-    if (v.hunger > SURVIVAL.hungryBelow + 10) this.warnedHungry = false;
-    this.hungerFlash.setFillStyle(0x8a1f1f, v.hunger <= 0 ? 0.08 + Math.sin(_time / 300) * 0.06 : 0);
+    if (!hurt) this.warnedHungry = false;
 
     this.vignette.setAlpha(Math.min(0.85, 0.15 + darknessAt(st.depth) * 1.05));
     this.mapDot.setPosition((st.x / TILE) * this.mapScale, (st.y / TILE) * this.mapScale);

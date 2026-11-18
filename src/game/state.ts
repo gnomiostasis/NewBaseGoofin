@@ -63,6 +63,8 @@ export class GameState {
   readonly mills = new Map<number, MillState>();
   /** Quarries by tile index. */
   readonly quarries = new Map<number, MillState>();
+  /** Play clock time when food can heal you again. */
+  foodReadyAt = 0;
   /** Milliseconds of play since the run began; drives the day and night cycle. */
   clock = 0;
   readonly events = new Phaser.Events.EventEmitter();

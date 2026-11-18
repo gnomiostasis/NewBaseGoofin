@@ -21,9 +21,7 @@ export interface ItemDef {
   name: string;
   /** Pack weight per item. */
   weight: number;
-  /** Hunger restored when eaten (0 = not food). */
-  food?: number;
-  /** Health restored when eaten. */
+  /** Health restored when eaten (food only). */
   heal?: number;
   tool?: 'axe' | 'pick';
   /** Tool strength: hits needed are divided by this. */
@@ -41,8 +39,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   wood: { id: 'wood', name: 'Wood', weight: 2, kind: 'material' },
   copper_ore: { id: 'copper_ore', name: 'Copper ore', weight: 3, kind: 'material' },
   glowcap: { id: 'glowcap', name: 'Glowcap', weight: 0.5, kind: 'material' },
-  berries: { id: 'berries', name: 'Berries', weight: 0.5, food: 12, kind: 'food' },
-  mushroom: { id: 'mushroom', name: 'Mushroom', weight: 0.5, food: 18, heal: 4, kind: 'food' },
+  berries: { id: 'berries', name: 'Berries', weight: 0.5, heal: 15, kind: 'food' },
+  mushroom: { id: 'mushroom', name: 'Mushroom', weight: 0.5, heal: 25, kind: 'food' },
   stone_axe: { id: 'stone_axe', name: 'Stone axe', weight: 3, tool: 'axe', power: 1, kind: 'tool' },
   stone_pick: { id: 'stone_pick', name: 'Stone pick', weight: 3, tool: 'pick', power: 1, kind: 'tool' },
   copper_axe: { id: 'copper_axe', name: 'Copper axe', weight: 3, tool: 'axe', power: 2, kind: 'tool' },

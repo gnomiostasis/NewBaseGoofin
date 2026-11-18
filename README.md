@@ -12,7 +12,7 @@ The farther you walk from camp, the darker and colder the wilds get.
 Once GitHub Pages is switched on (Settings > Pages > Source: **GitHub Actions**), every push to
 `main` publishes the game at **https://gnomiostasis.github.io/NewBaseGoofin/**.
 
-The game saves itself in your browser every 20 seconds, whenever you sleep, and when you close the
+The game saves itself in your browser every 20 seconds, whenever you set a bed, and when you close the
 tab. Pick **Continue** on the title screen to carry on. Lumber mills keep sawing while the game is
 closed, for up to 4 hours.
 
@@ -40,10 +40,10 @@ Controls:
 | --- | --- |
 | WASD / arrows | Walk |
 | Shift | Run (uses energy) |
-| Left click | Use what you click on next to you, or what's in front of you: gather it (hold to keep chopping or mining), store materials in a chest or the camp crate, rest, sleep, open the workbench |
+| Left click | Use what you click on next to you, or what's in front of you: gather it (hold to keep chopping or mining), store materials in a chest or the camp crate, pick a bed to wake at, open the workbench |
 | Right click | Attack toward the mouse; hold to keep attacking (uses energy). Fighters swing an axe, archers shoot arrows, mages hurl firebolts |
 | Space or J | Swing at whatever is in front of you |
-| F | Eat (mushrooms first, then berries) |
+| F | Eat to heal (mushrooms first, then berries). After a meal, food can't heal you again for 15 seconds; the Food bar shows the countdown |
 | C | Hand-crafting (then 1 or 2 to craft) |
 | B | Build mode: 1-7 picks floor, wall, door, chest, bed, workbench or lumber mill; left click builds, right click removes (half the cost back) |
 | L | Stats: 1-4 spends a point on Strength, Endurance, Agility or Gathering |
@@ -63,8 +63,8 @@ When a run begins you choose a class, and it stays with you for that run:
 Your first job: pick up sticks and stones and pull some grass near camp, then craft a stone axe.
 
 Building takes materials from your pack, plus from storage when you're near camp or a chest
-(chests and the camp stash share one storage). Sleep in a bed and you'll wake there if you
-collapse. A workbench crafts copper tools (twice as fast) and a woven basket (+20 pack space).
+(chests and the camp stash share one storage). Click a bed and you'll wake there if you
+collapse. There's no hunger: food heals you, and the campfire slowly heals you too. A workbench crafts copper tools (twice as fast) and a woven basket (+20 pack space).
 
 Bramblehogs root around the Old Woods and Duskprowlers hunt in pairs in the Deepwild. Neither
 will follow you into the meadow. If you collapse, your materials stay behind in a dropped pack
@@ -99,7 +99,7 @@ faster sawing, up to 6. It stops when storage holds 150 wood. Click a mill to se
 ## Roadmap
 
 1. **Walk the wilds** (done): a large map with a camp and three zones, a player you can walk around, a following camera.
-2. **Gather and carry** (done): harvest trees, rocks and bushes; an inventory with a carry limit; health, hunger and stamina.
+2. **Gather and carry** (done): harvest trees, rocks and bushes; an inventory with a carry limit; health, hunger and stamina (hunger and sleeping were later removed; food now heals).
 3. **Build the base** (done): grid placement, walls, floors, chests, a bed and a workbench.
 4. **Danger and leveling** (done): creatures in the outer zones, melee combat, XP and four stats.
 5. **First automation** (done): a lumber mill that fills a chest with wood over time.

@@ -237,7 +237,7 @@ export class TitleScene extends Phaser.Scene {
     } else {
       const help = [
         '[W/S] choose   [Enter] start',
-        'Your game saves itself every 20 seconds and whenever you sleep.',
+        'Your game saves itself every 20 seconds and when you close the tab.',
       ];
       help.forEach((line, k) =>
         this.menu.add(this.text(0, top + h + 22 + k * 20, line, 13, UI.cream).setOrigin(0.5, 0).setStroke(UI.outline, 4)),

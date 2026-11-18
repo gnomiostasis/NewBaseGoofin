@@ -95,7 +95,7 @@ export function restoreState(s: Saveable, d: SaveData) {
   s.pack.baseCapacity = cap;
   s.stash.clear();
   for (const [id, n] of d.stash) s.stash.add(id, n);
-  s.vitals = { ...d.vitals };
+  s.vitals = { health: d.vitals.health, stamina: d.vitals.stamina };
   Object.assign(s.progress, { level: d.progress.level, xp: d.progress.xp, points: d.progress.points });
   s.progress.stats = { ...s.progress.stats, ...d.progress.stats };
   s.progress.cls = isClassId(d.progress.cls) ? d.progress.cls : null;

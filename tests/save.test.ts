@@ -44,7 +44,7 @@ describe('saving', () => {
     a.pack.add('stone_axe');
     a.pack.add('wood', 12);
     a.stash.add('copper_ore', 30);
-    a.vitals.hunger = 42;
+    a.vitals.health = 42;
     a.progress.gain(200);
     a.progress.spend('agility');
     a.respawn = [10, 12];
@@ -56,7 +56,7 @@ describe('saving', () => {
     restoreState(b, JSON.parse(JSON.stringify(captureState(a))) as SaveData);
     expect(b.pack.entries()).toEqual(a.pack.entries());
     expect(b.stash.entries()).toEqual(a.stash.entries());
-    expect(b.vitals.hunger).toBe(42);
+    expect(b.vitals.health).toBe(42);
     expect(b.progress.level).toBe(a.progress.level);
     expect(b.progress.points).toBe(a.progress.points);
     expect(b.progress.stats.agility).toBe(1);

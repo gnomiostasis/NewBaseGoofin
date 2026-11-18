@@ -33,7 +33,7 @@ export const BUILDABLES: BuildDef[] = [
   { kind: 'wall', name: 'Wall', cost: { wood: 2 }, blurb: 'A sturdy fence that keeps things out' },
   { kind: 'door', name: 'Door', cost: { wood: 2, fiber: 1 }, blurb: 'A gate in your fence you can walk through' },
   { kind: 'chest', name: 'Chest', cost: { wood: 4, stone: 1 }, blurb: 'Storage, shared with the camp stash' },
-  { kind: 'bed', name: 'Bed', cost: { wood: 4, fiber: 4 }, blurb: 'Rest here; you wake here if you collapse' },
+  { kind: 'bed', name: 'Bed', cost: { wood: 4, fiber: 4 }, blurb: 'Click it to wake here if you collapse' },
   { kind: 'workbench', name: 'Workbench', cost: { wood: 5, stone: 3 }, blurb: 'Crafts copper tools and a bigger pack' },
   { kind: 'mill', name: 'Mill', cost: { wood: 10, stone: 6, copper_ore: 2 }, blurb: 'Saws wood from nearby trees into a chest' },
   { kind: 'spikes', name: 'Spikes', cost: { wood: 2, stone: 2 }, blurb: 'Hurts and slows creatures that cross; you can walk over it' },

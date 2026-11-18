@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CREATURES, pickSpawn, wouldWin } from '../src/game/creatures';
 import { Progress, xpToNext, modsFor, LEVELING } from '../src/game/stats';
-import { freshVitals, tickVitals } from '../src/game/survival';
 
 describe('leveling', () => {
   it('levels up, grants points, and caps at the max level', () => {
@@ -24,13 +23,10 @@ describe('leveling', () => {
     expect(p.stats.strength).toBe(LEVELING.maxPerStat);
   });
 
-  it('endurance raises max health and slows hunger', () => {
+  it('endurance raises max health and makes food heal more', () => {
     const tough = modsFor({ strength: 0, endurance: 4, agility: 0, gathering: 0 });
     expect(tough.maxHealth).toBe(140);
-    const base = { dt: 60, moving: false, sprinting: false, atCamp: false };
-    const a = tickVitals(freshVitals(), base);
-    const b = tickVitals(freshVitals(), base, tough);
-    expect(b.hunger).toBeGreaterThan(a.hunger);
+    expect(tough.foodHealMul).toBeGreaterThan(1);
   });
 
   it('a level takes a handful of trips, not hundreds', () => {
