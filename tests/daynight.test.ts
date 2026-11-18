@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DAY, dayNumber, hourLabel, isNight, nextMorning, nightness } from '../src/game/daynight';
+import { DAY, countdownLabel, dayNumber, hourLabel, isNight, nextMorning, nightCountdown, nightness } from '../src/game/daynight';
 
 const at = (f: number, day = 0) => (day + f - DAY.startAt) * DAY.lengthMs;
 
@@ -60,5 +60,30 @@ describe('night raids', () => {
   it('walls hold far longer than a single bite', () => {
     expect(NIGHT.structureHp.wall).toBeGreaterThan(NIGHT.structureHp.door);
     expect(NIGHT.structureHp.wall / 12).toBeGreaterThanOrEqual(15);
+  });
+});
+
+describe('night countdown', () => {
+  it('counts down to nightfall by day and to sunrise by night', () => {
+    const start = nightCountdown(0);
+    expect(start.night).toBe(false);
+    expect(start.msLeft).toBeCloseTo((DAY.nightFrom - DAY.startAt) * DAY.lengthMs);
+    const dusk = nightCountdown(at(DAY.nightFrom));
+    expect(dusk.night).toBe(true);
+    expect(dusk.msLeft).toBeCloseTo(2 * 60_000);
+    // Just after the creatures leave, the next night is almost a full day away.
+    const morning = nightCountdown(at(0.99));
+    expect(morning.night).toBe(false);
+    expect(morning.msLeft).toBeCloseTo((1 - 0.99 + DAY.nightFrom) * DAY.lengthMs);
+  });
+
+  it('agrees with isNight across the day', () => {
+    for (let f = 0; f < 1; f += 0.01) expect(nightCountdown(at(f)).night).toBe(isNight(at(f)));
+  });
+
+  it('formats as minutes and seconds', () => {
+    expect(countdownLabel(245_000)).toBe('4:05');
+    expect(countdownLabel(59_100)).toBe('1:00');
+    expect(countdownLabel(0)).toBe('0:00');
   });
 });
