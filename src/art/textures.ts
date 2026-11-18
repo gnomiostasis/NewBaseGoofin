@@ -470,46 +470,62 @@ function floorTile(g: Ctx) {
  * N=1, E=2, S=4, W=8) and a 10px front face when nothing continues the wall below.
  */
 function wallPiece(g: Ctx, mask: number) {
-  const top = 0;
-  const face = 16;
-  rect(g, 0, top, 16, 16, WOOD[0]);
-  for (let x = 2; x < 16; x += 5) rect(g, x, top, 1, 16, WOOD[1]);
-  rect(g, 0, top, 16, 1, WOOD[2]);
-  // Outline where the wall ends.
-  if (!(mask & 1)) rect(g, 0, top, 16, 1, OUTLINE);
-  if (!(mask & 2)) rect(g, 15, top, 1, 16, OUTLINE);
-  if (!(mask & 8)) rect(g, 0, top, 1, 16, OUTLINE);
-  if (!(mask & 4)) {
-    rect(g, 0, face, 16, 10, WOOD[1]);
-    for (let y = face + 2; y < face + 10; y += 3) rect(g, 0, y, 16, 1, WOOD[3]);
-    rect(g, 0, face, 16, 1, OUTLINE);
-    rect(g, 0, face + 9, 16, 1, OUTLINE);
-    if (!(mask & 2)) rect(g, 15, face, 1, 10, OUTLINE);
-    if (!(mask & 8)) rect(g, 0, face, 1, 10, OUTLINE);
-    for (let x = 3; x < 16; x += 6) px(g, x, face + 4, WOOD[2]);
-  } else {
-    rect(g, 0, face, 16, 10, WOOD[0]);
-    for (let x = 2; x < 16; x += 5) rect(g, x, face, 1, 10, WOOD[1]);
-    if (!(mask & 2)) rect(g, 15, face, 1, 10, OUTLINE);
-    if (!(mask & 8)) rect(g, 0, face, 1, 10, OUTLINE);
-  }
+  // 16 x 26, anchored at the tile's bottom (the tile is rows 10-25). A thin post-and-rail fence:
+  // a post in the middle of the tile, with rails running to each neighbouring fence or gate
+  // (N=1, E=2, S=4, W=8).
+  const rail = (x: number, w: number) => {
+    for (const y of [11, 16]) {
+      rect(g, x, y, w, 4, OUTLINE);
+      rect(g, x, y + 1, w, 2, PLANK[0]);
+      rect(g, x, y + 1, w, 1, PLANK[2]);
+    }
+  };
+  // Runs going north or south are seen end-on: a narrow strip of rail tops.
+  const strip = (y: number, h: number) => {
+    rect(g, 6, y, 4, h, OUTLINE);
+    rect(g, 7, y, 2, h, PLANK[0]);
+    for (let yy = y + 1; yy < y + h; yy += 4) px(g, 7, yy, PLANK[2]);
+  };
+  shadow(g, 8, 24, 4, 1, 0.25);
+  if (mask & 1) strip(0, 10);
+  if (mask & 4) strip(22, 4);
+  if (mask & 8) rail(0, 6);
+  if (mask & 2) rail(10, 6);
+  // The post, with a pointed cap.
+  rect(g, 6, 8, 4, 16, OUTLINE);
+  rect(g, 7, 9, 2, 14, WOOD[0]);
+  rect(g, 7, 9, 1, 14, WOOD[2]);
+  px(g, 7, 7, OUTLINE);
+  px(g, 8, 7, OUTLINE);
 }
 
 function door(g: Ctx, open: boolean) {
-  // 16 x 26: frame posts and lintel, plank door (or a dark opening when open).
-  rect(g, 0, 0, 16, 26, OUTLINE);
-  rect(g, 1, 1, 14, 24, WOOD[1]);
-  rect(g, 1, 1, 14, 3, WOOD[0]);
+  // 16 x 26: a fence gate between two posts at the tile's edges, so fence rails meet it.
+  const post = (x: number) => {
+    rect(g, x, 7, 4, 17, OUTLINE);
+    rect(g, x + 1, 8, 2, 15, WOOD[0]);
+    rect(g, x + 1, 8, 1, 15, WOOD[2]);
+  };
+  shadow(g, 8, 24, 7, 1, 0.22);
   if (open) {
-    rect(g, 3, 5, 10, 21, '#3b2a1e');
-    rect(g, 3, 5, 2, 21, PLANK[1]);
+    // The gate swung inward: just its edge shows beside the left post.
+    rect(g, 3, 10, 3, 13, OUTLINE);
+    rect(g, 4, 11, 1, 11, PLANK[0]);
   } else {
-    rect(g, 3, 5, 10, 21, PLANK[0]);
-    for (let x = 5; x < 13; x += 3) rect(g, x, 5, 1, 21, PLANK[1]);
-    rect(g, 3, 9, 10, 1, PLANK[3]);
-    rect(g, 3, 19, 10, 1, PLANK[3]);
-    px(g, 11, 15, '#e0b13a');
+    // Pickets behind two rails.
+    for (const x of [4, 9]) {
+      rect(g, x, 8, 3, 15, OUTLINE);
+      rect(g, x + 1, 9, 1, 13, PLANK[0]);
+      px(g, x + 1, 9, PLANK[2]);
+    }
+    for (const y of [11, 17]) {
+      rect(g, 3, y, 10, 3, OUTLINE);
+      rect(g, 3, y + 1, 10, 1, PLANK[2]);
+    }
+    px(g, 10, 15, '#e0b13a');
   }
+  post(0);
+  post(12);
 }
 
 function chest(g: Ctx) {
