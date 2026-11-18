@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CLASSES, CLASS_ORDER, attackFor, dps, withClass } from '../src/game/classes';
+import { previewStat } from '../src/game/statPreview';
 import { CREATURES, wouldWin } from '../src/game/creatures';
 import { BASE_MODS, Progress } from '../src/game/stats';
 import { captureState, restoreState } from '../src/game/save';
@@ -58,5 +59,23 @@ describe('classes', () => {
     c.progress.cls = 'archer';
     restoreState(c, { ...saved, progress: { ...saved.progress, cls: undefined } } as never);
     expect(c.progress.cls).toBeNull();
+  });
+});
+
+describe('stat preview', () => {
+  const zero = { strength: 0, endurance: 0, agility: 0, gathering: 0 };
+  it('shows what more points would change', () => {
+    const input = { stats: zero, cls: 'fighter' as const, axePower: 1, level: 3 };
+    const [hp, food] = previewStat('endurance', input, { ...zero, endurance: 2 });
+    expect(hp).toEqual({ label: 'Max health', now: '130', next: '150' });
+    expect(food.next).toBe('+20%');
+    const [dmg, carry] = previewStat('strength', input, { ...zero, strength: 1 });
+    expect(Number(dmg.next) - Number(dmg.now)).toBe(2);
+    expect(Number(carry.next) - Number(carry.now)).toBe(5);
+  });
+
+  it('shows no change when nothing is staged', () => {
+    const input = { stats: zero, cls: null, axePower: 0, level: 1 };
+    for (const e of previewStat('agility', input, zero)) expect(e.next).toBe(e.now);
   });
 });
