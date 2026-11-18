@@ -1358,6 +1358,8 @@ export class WorldScene extends Phaser.Scene {
   private dispatchCart(i: number, m: MillState, def: ProducerDef, time: number) {
     const held = m.held ?? 0;
     if (this.carts.has(i) || held < Math.min(CART.load, def.hopper) || time < (this.cartRetry.get(i) ?? 0)) return;
+    // Carts stay home at night.
+    if (isNight(this.game_.clock)) return;
     const w = this.world;
     const x = i % w.width;
     const y = (i - x) / w.width;
@@ -1379,6 +1381,8 @@ export class WorldScene extends Phaser.Scene {
   private updateCarts(delta: number) {
     const st = this.game_;
     const view = this.cameras.main.worldView;
+    // At night a cart on the road stops where it is and waits for morning.
+    if (isNight(st.clock)) return;
     for (const [i, c] of this.carts) {
       let step = (CART.speed * Math.min(delta, 100)) / 1000;
       while (step > 0) {
@@ -1441,9 +1445,10 @@ export class WorldScene extends Phaser.Scene {
         this.production[def.item] = (this.production[def.item] ?? 0) + perMinute(status);
         if (view.contains(x * TILE + 8, y * TILE)) {
           let text = shortStatus(status, def);
-          if (!status.ok && status.reason === 'hopper-full' && this.carts.has(i)) text = 'Hopper full: waiting for the cart';
-          if (status.ok) text += ` · ${m.held ?? 0}/${def.hopper}`;
-          this.producerLabels.push({ x: x * TILE + 8, y: (y + 1) * TILE - 30, text, ok: status.ok || this.carts.has(i) });
+          const night = isNight(st.clock);
+          if (!status.ok && status.reason === 'hopper-full' && (this.carts.has(i) || night)) text = night ? 'Hopper full: cart waits for morning' : 'Hopper full: waiting for the cart';
+          if (status.ok) text += ` · ${m.held ?? 0}/${def.hopper}${night ? ' · cart waits for morning' : ''}`;
+          this.producerLabels.push({ x: x * TILE + 8, y: (y + 1) * TILE - 30, text, ok: status.ok || this.carts.has(i) || night });
         }
         tickMill(m, status, delta, stored, def);
         this.dispatchCart(i, m, def, time);

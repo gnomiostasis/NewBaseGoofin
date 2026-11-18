@@ -75,7 +75,8 @@ A lumber mill (wood, stone and a little copper ore) saws wood from the standing 
 3 tiles, even while you're far away; a quarry does the same with rocks and stone. More trees
 (up to 6) or rocks (up to 4) means faster work. What they make drops into their hopper (20), and
 each one has a little handcart that hauls loads of 10 back home along open ground, to the camp or
-the nearest chest. Wall one in completely and its cart can't get out, so leave a gap or a door.
+the nearest chest. Carts stay home at night (one already on the road stops and waits for morning). Wall one in
+completely and its cart can't get out, so leave a gap or a door.
 Click a mill or quarry to empty its hopper into your pack. They stop when storage holds 150 wood
 or 200 stone.
 
