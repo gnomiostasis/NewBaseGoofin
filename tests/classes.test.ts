@@ -15,15 +15,25 @@ describe('classes', () => {
     expect(attackFor(null, BASE_MODS, 1, 1).kind).toBe('swing');
   });
 
-  it('the fighter hits hardest up close; ranged classes trade damage for distance', () => {
+  it('each class has its own rhythm: damage, speed and range', () => {
     const fighter = attackFor('fighter', withClass(BASE_MODS, 'fighter'), 1, 1);
     const archer = attackFor('archer', withClass(BASE_MODS, 'archer'), 1, 1);
     const mage = attackFor('mage', withClass(BASE_MODS, 'mage'), 1, 1);
+    // Fighter: fast, heavy, short.
+    expect(fighter.cooldownMs).toBeLessThan(mage.cooldownMs / 2);
+    expect(fighter.damage).toBeGreaterThan(archer.damage * 1.5);
+    expect(fighter.range).toBeLessThan(archer.range / 8);
+    // Archer: fast, light, long.
+    expect(archer.cooldownMs).toBeLessThanOrEqual(fighter.cooldownMs);
+    expect(archer.range).toBeGreaterThan(fighter.range * 8);
+    // Mage: slow, the heaviest single hit, long, and it bursts.
+    expect(mage.damage).toBeGreaterThan(fighter.damage);
+    expect(mage.damage).toBeGreaterThan(archer.damage * 3);
+    expect(mage.range).toBeGreaterThan(fighter.range * 8);
+    expect(mage.splash).toBeGreaterThan(0);
+    // The fighter pays for short reach with the best damage per second, but nobody is useless.
     expect(dps(fighter)).toBeGreaterThan(dps(archer));
     expect(dps(fighter)).toBeGreaterThan(dps(mage));
-    expect(archer.range).toBeGreaterThan(fighter.range * 4);
-    expect(mage.splash).toBeGreaterThan(0);
-    // Not useless either: within a factor of two of the fighter.
     expect(dps(archer) * 2).toBeGreaterThan(dps(fighter));
     expect(dps(mage) * 2).toBeGreaterThan(dps(fighter));
   });
