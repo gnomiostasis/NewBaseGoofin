@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Build } from '../src/game/build';
-import { MILL, QUARRY, millStatus, msPerItem, pathToStorage, perMinute, shortStatus, sourcesNear, tickMill, treesNear, type MillState } from '../src/game/mill';
+import { MILL, QUARRY, millStatus, msPerItem, pathToStorage, perMinute, placementHint, shortStatus, sourceTilesNear, sourcesNear, tickMill, treesNear, type MillState } from '../src/game/mill';
 import { Prop, generateWorld, idx, isBlocked, type World } from '../src/world/generate';
 import { GATHER } from '../src/game/gather';
 
@@ -134,5 +134,28 @@ describe('mules', () => {
     expect(path).not.toBeNull();
     const last = path![path!.length - 1];
     expect(Math.hypot((last % w.width) - w.campX, Math.floor(last / w.width) - w.campY)).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('placement preview', () => {
+  it('lists exactly the trees or rocks inside the square it works from', () => {
+    const [w, x, y] = clearing();
+    const r = QUARRY.radius;
+    w.prop[idx(w, x + r, y - r)] = Prop.Rock; // corner: counts
+    w.prop[idx(w, x - 1, y)] = Prop.Rock;
+    w.prop[idx(w, x + r + 1, y)] = Prop.Rock; // one step outside: doesn't
+    w.prop[idx(w, x, y + 1)] = Prop.Tree; // wrong kind for a quarry
+    const tiles = sourceTilesNear(w, x, y, QUARRY);
+    expect(tiles).toHaveLength(2);
+    expect(tiles).toContainEqual([x + r, y - r]);
+    expect(tiles).toContainEqual([x - 1, y]);
+    expect(tiles.length).toBe(sourcesNear(w, x, y, QUARRY));
+    expect(sourceTilesNear(w, x, y, MILL)).toEqual([[x, y + 1]]);
+  });
+
+  it('says what it would make there', () => {
+    expect(placementHint(0, QUARRY)).toBe("No rocks in range: it won't make anything here");
+    expect(placementHint(1, MILL)).toBe('1 tree in range · +1.3 wood/min');
+    expect(placementHint(9, QUARRY)).toBe('9 rocks in range (full speed) · +4 stone/min');
   });
 });

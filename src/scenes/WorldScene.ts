@@ -6,7 +6,7 @@ import { COMBAT, NIGHT } from '../game/creatures';
 import { CLASSES, attackFor, type AttackSpec } from '../game/classes';
 import { dayNumber, isNight } from '../game/daynight';
 import { LEVELING } from '../game/stats';
-import { MULE, MILL, QUARRY, describeMill, millStatus, pathToStorage, perMinute, shortStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
+import { MULE, MILL, QUARRY, describeMill, millStatus, placementHint, sourceTilesNear, pathToStorage, perMinute, shortStatus, tickMill, type MillState, type ProducerDef } from '../game/mill';
 import { AUTOSAVE_MS, OFFLINE_CAP_MS, applyWorldChanges, captureState, restoreState, worldChanges, writeSave, type SaveData } from '../game/save';
 import { E, GRASS_VARIANTS, N, PLAYER_DIRS, S, T_BLOCK, T_DIRT, T_GRASS, T_WATER, TREE_FRAMES, W } from '../art/textures';
 import {
@@ -169,6 +169,8 @@ export class WorldScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-F', () => (this.queuedEat = true));
     this.input.mouse?.disableContextMenu();
     this.ghost = this.add.image(0, 0, 'atlas', 'floor').setOrigin(0.5, 1).setAlpha(0.65).setDepth(200002).setVisible(false);
+    // Drawn on the ground, under trees and rocks, so the ones a mill or quarry would use glow at their feet.
+    this.rangeGfx = this.add.graphics().setDepth(-3).setVisible(false);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       const st = this.game_;
       // The menu takes the mouse while it's open, and the click that closed it doesn't count.
@@ -262,6 +264,9 @@ export class WorldScene extends Phaser.Scene {
   }
   private buildObjects = new Map<number, Phaser.GameObjects.Image[]>();
   private ghost!: Phaser.GameObjects.Image;
+  /** While placing a mill or quarry: the area it works from, and the trees or rocks that count. */
+  private rangeGfx!: Phaser.GameObjects.Graphics;
+  private rangeKey = '';
   private chests = new Set<number>();
   night!: NightSystem;
   private playerLight!: { x: number; y: number; r: number };
@@ -1254,11 +1259,13 @@ export class WorldScene extends Phaser.Scene {
     const st = this.game_;
     if (!st.buildMode || this.busy) {
       this.ghost.setVisible(false);
+      this.hideRange();
       st.buildMsg = null;
       return;
     }
     const [x, y] = this.pointerTile();
     if (st.demolish) {
+      this.hideRange();
       const why = this.checkDemolish(x, y);
       st.buildMsg = why;
       this.ghost
@@ -1273,12 +1280,50 @@ export class WorldScene extends Phaser.Scene {
     const frame = def.kind === 'wall' ? 'wall_0' : def.kind;
     const why = this.checkPlacement(x, y);
     st.buildMsg = why;
+    const producer = def.kind === 'mill' ? MILL : def.kind === 'quarry' ? QUARRY : null;
+    if (producer) {
+      const sources = this.showRange(x, y, producer, !why);
+      // Where it can go, say what it would make there.
+      if (!why) st.buildMsg = placementHint(sources, producer);
+    } else this.hideRange();
     this.ghost
       .setFrame(frame)
       .setPosition(x * TILE + 8, (y + 1) * TILE)
       .setDepth(def.kind === 'floor' ? -4 : (y + 1) * TILE + 0.5)
       .setTint(why ? 0xff7a6a : 0x9cff9c)
       .setVisible(true);
+  }
+
+  /**
+   * Shades the square a producer at (x, y) works from and rings each tree or rock inside it.
+   * Returns how many sources it found.
+   */
+  private showRange(x: number, y: number, def: ProducerDef, ok: boolean): number {
+    const tiles = sourceTilesNear(this.world, x, y, def);
+    const key = `${def.name}|${x},${y}|${ok}|${tiles.length}`;
+    if (key === this.rangeKey) return tiles.length;
+    this.rangeKey = key;
+    const g = this.rangeGfx.clear().setVisible(true);
+    const r = def.radius;
+    const edge = ok ? 0xfff1b8 : 0xff9a8a;
+    const left = (x - r) * TILE;
+    const top = (y - r) * TILE;
+    const size = (r * 2 + 1) * TILE;
+    g.fillStyle(edge, 0.12).fillRect(left, top, size, size);
+    g.lineStyle(1, edge, 0.85).strokeRect(left + 0.5, top + 0.5, size - 1, size - 1);
+    // Trees or rocks past the most that help are still ringed: any of them keep it working.
+    const glow = def === QUARRY ? 0xc8e6ff : 0x9cff9c;
+    for (const [tx, ty] of tiles) {
+      g.fillStyle(glow, 0.3).fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
+      g.lineStyle(1, glow, 0.95).strokeRect(tx * TILE + 1.5, ty * TILE + 1.5, TILE - 3, TILE - 3);
+    }
+    return tiles.length;
+  }
+
+  private hideRange() {
+    if (!this.rangeKey) return;
+    this.rangeKey = '';
+    this.rangeGfx.clear().setVisible(false);
   }
 
   /** Doors swing open while you stand in them. */

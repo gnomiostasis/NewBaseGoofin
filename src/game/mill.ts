@@ -71,16 +71,29 @@ export type MillStatus =
   | { ok: true; sources: number; msPerItem: number }
   | { ok: false; reason: 'no-source' | 'hopper-full' | 'full'; sources: number };
 
-/** Sources (trees for a mill, rocks for a quarry) around tile (x, y). */
-export function sourcesNear(w: World, x: number, y: number, def: ProducerDef = MILL): number {
-  let n = 0;
+/** The tiles of the sources (trees for a mill, rocks for a quarry) a producer at tile (x, y) works from. */
+export function sourceTilesNear(w: World, x: number, y: number, def: ProducerDef = MILL): Array<[number, number]> {
+  const tiles: Array<[number, number]> = [];
   const r = def.radius;
   for (let dy = -r; dy <= r; dy++) {
     for (let dx = -r; dx <= r; dx++) {
-      if (inBounds(w, x + dx, y + dy) && w.prop[idx(w, x + dx, y + dy)] === def.source) n++;
+      if (inBounds(w, x + dx, y + dy) && w.prop[idx(w, x + dx, y + dy)] === def.source) tiles.push([x + dx, y + dy]);
     }
   }
-  return n;
+  return tiles;
+}
+
+/** How many sources are around tile (x, y). */
+export function sourcesNear(w: World, x: number, y: number, def: ProducerDef = MILL): number {
+  return sourceTilesNear(w, x, y, def).length;
+}
+
+/** What placing a producer at (x, y) would give: "4 rocks in range · +4 stone/min", or a warning. */
+export function placementHint(sources: number, def: ProducerDef = MILL): string {
+  const [one, many] = def.sourceName;
+  if (sources === 0) return `No ${many} in range: it won't make anything here`;
+  const n = sources >= def.maxSources ? `${sources} ${many} in range (full speed)` : `${sources} ${sources === 1 ? one : many} in range`;
+  return `${n} · +${rateLabel(60_000 / msPerItem(sources, def))} ${def.itemName}/min`;
 }
 
 export const treesNear = (w: World, x: number, y: number) => sourcesNear(w, x, y, MILL);
